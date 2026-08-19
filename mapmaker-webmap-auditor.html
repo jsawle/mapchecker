@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MapMaker Web Map Auditor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#1c2740; --ink-2:#4a556b; --ink-3:#8b93a6;
+  --paper:#f7f8fa; --card:#ffffff; --line:#dfe3ea;
+  --pass:#2f7d6a; --warn:#b8741a; --fail:#b3383a; --info:#5b6b8c;
+  --pass-bg:#e6f2ee; --warn-bg:#faefdc; --fail-bg:#f9e5e5; --info-bg:#e9edf5;
+  --accent:#1f5f8f;
+  --sans:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.45}
+a{color:var(--accent)}
+header{background:var(--card);border-bottom:1px solid var(--line);padding:18px 28px;display:flex;align-items:baseline;gap:18px;flex-wrap:wrap}
+header h1{margin:0;font-size:18px;font-weight:600;letter-spacing:.01em}
+header .sub{color:var(--ink-3);font-size:13px}
+header .ver{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--ink-3)}
+main{max-width:1180px;margin:0 auto;padding:24px 28px 80px}
+.input-row{display:flex;gap:10px;align-items:stretch;flex-wrap:wrap}
+.input-row input{flex:1;min-width:280px;font:inherit;font-family:var(--mono);font-size:14px;padding:11px 14px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)}
+.input-row input:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+button{font:inherit;font-weight:500;padding:11px 18px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
+button.secondary{background:var(--card);color:var(--accent)}
+button:disabled{opacity:.5;cursor:default}
+button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.hint{color:var(--ink-3);font-size:13px;margin:8px 0 0}
+.hint code{font-family:var(--mono);font-size:12px}
+#status{margin:16px 0;color:var(--ink-2);font-size:14px;min-height:20px}
+#status.err{color:var(--fail)}
+.report{display:grid;grid-template-columns:300px 1fr;gap:22px;margin-top:22px}
+@media (max-width:820px){.report{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px}
+.mapcard{padding:0;overflow:hidden;align-self:start;position:sticky;top:16px}
+.mapcard img{display:block;width:100%;aspect-ratio:2/1.3;object-fit:cover;background:#e5e8ee}
+.mapcard .body{padding:16px}
+.mapcard h2{margin:0 0 4px;font-size:16px;font-weight:600;line-height:1.3}
+.mapcard .meta{font-family:var(--mono);font-size:12px;color:var(--ink-2);word-break:break-all;margin:2px 0}
+.mapcard .meta b{color:var(--ink-3);font-weight:400}
+.tally{display:flex;gap:6px;margin:14px 0 6px;flex-wrap:wrap}
+.pill{font-family:var(--mono);font-size:12px;padding:3px 9px;border-radius:999px;font-weight:500}
+.pill.fail{background:var(--fail-bg);color:var(--fail)}
+.pill.warn{background:var(--warn-bg);color:var(--warn)}
+.pill.pass{background:var(--pass-bg);color:var(--pass)}
+.pill.info{background:var(--info-bg);color:var(--info)}
+.pill.error{background:#eee;color:var(--ink-2)}
+.verdict{margin-top:10px;padding:10px 12px;border-radius:6px;font-size:14px;font-weight:500}
+.verdict.ready{background:var(--pass-bg);color:var(--pass)}
+.verdict.review{background:var(--warn-bg);color:var(--warn)}
+.verdict.blocked{background:var(--fail-bg);color:var(--fail)}
+.actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.actions button{padding:7px 12px;font-size:13px}
+.section{margin-bottom:18px}
+.section h3{margin:0;padding:12px 16px;border-bottom:1px solid var(--line);font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-2);display:flex;justify-content:space-between}
+.section h3 .count{font-family:var(--mono);font-weight:400;text-transform:none;letter-spacing:0;color:var(--ink-3)}
+.check{display:grid;grid-template-columns:64px 1fr;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.check:last-child{border-bottom:none}
+.check .st{font-family:var(--mono);font-size:11px;font-weight:500;padding-top:3px;text-transform:uppercase}
+.check.pass .st{color:var(--pass)} .check.warn .st{color:var(--warn)} .check.fail .st{color:var(--fail)} .check.info .st{color:var(--info)} .check.error .st{color:var(--ink-3)}
+.check .name{font-weight:500}
+.check .msg{color:var(--ink-2);font-size:14px;margin-top:2px}
+.check .ev{font-family:var(--mono);font-size:12px;color:var(--ink-3);margin-top:6px;white-space:pre-wrap;word-break:break-word}
+.check .ev span{display:block}
+.check .guide{font-size:13px;color:var(--ink-3);margin-top:6px;border-left:2px solid var(--line);padding-left:8px}
+.check.pass .guide,.check.pass .ev{display:none}
+.showall .check.pass .guide,.showall .check.pass .ev{display:block}
+.batch{margin-top:22px}
+table.batch{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:8px;overflow:hidden;font-size:14px}
+table.batch th,table.batch td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line)}
+table.batch th{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-2);font-weight:600;background:var(--paper)}
+table.batch td.n{font-family:var(--mono);font-size:12px}
+table.batch tr{cursor:pointer}
+table.batch tr:hover td{background:#f2f5fa}
+.prov{display:inline-block;font-family:var(--mono);font-size:10px;padding:1px 5px;border:1px dashed var(--warn);color:var(--warn);border-radius:3px;margin-left:6px;vertical-align:middle}
+footer{max-width:1180px;margin:40px auto 0;padding:0 28px;font-size:12px;color:var(--ink-3)}
+@media (prefers-reduced-motion:no-preference){.check{animation:in .25s ease both}@keyframes in{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}}
+</style>
+</head>
+<body>
+<header>
+  <h1>MapMaker Web Map Auditor</h1>
+  <span class="sub">Self-check for distributor and partner web maps against the General Cartographic Standards</span>
+  <span class="ver" id="ver"></span>
+</header>
+<main>
+  <div class="input-row">
+    <input id="q" placeholder="Web map item ID, item URL, or group ID" autocomplete="off" spellcheck="false">
+    <button id="run">Audit</button>
+    <button id="toggle" class="secondary" disabled>Show passes in detail</button>
+  </div>
+  <p class="hint">Public items only. Paste an item ID (<code>a1b2…</code>), an <code>arcgis.com/home/item.html?id=…</code> URL, a viewer URL with <code>webmap=</code>, or a group ID to audit every public web map in the group.</p>
+  <div id="status"></div>
+  <div id="out"></div>
+</main>
+<footer>
+  This tool automates the mechanical parts of review. Guideline checks marked <em>warn</em> are heuristics — a map may pass review with warnings, and the standards note that maps should still be reviewed by an NGS or Esri cartographer before publication. Nothing here is a substitute for that.
+</footer>
+
+<script>
+/* ============================================================
+   RUBRIC — edit here. Version this string when criteria change.
+   severity: fail = publishing requirement | warn = guideline heuristic | info = advisory
+   provisional: true = metadata requirement assumed, pending the distributor checklist
+   ============================================================ */
+const RUBRIC = {
+  version: "0.1.0",
+  standardsRef: "General Cartographic Standards for MapMaker",
+  thresholds: {
+    titleMax: 60,
+    descriptionMin: 100,
+    tagsMin: 3,
+    layersMaxSoft: 15,
+    popupFieldsManySoft: 8,
+    effectsLayersSoft: 2,
+    fontsMax: 2,
+    propSymbolMinRatio: 2,
+    globalScaleMinWidthDeg: 200 // initial extent wider than this = "global"
+  },
+  metadataFieldPattern: /^(objectid|fid|globalid|shape(_|\.)?(length|area|leng|len|starea|stlength)?|shape__?(length|area)|created_(user|date)|last_edited_(user|date)|editdate|creator|editor)$/i,
+  codeLikeFieldPattern: /(^[A-Z0-9_]{2,}$)|(_)|(^[a-z]{1,4}\d*$)/,
+  countFieldPattern: /(pop|popul|total|count|cnt|num|sum|qty|households|persons|people)/i,
+  serviceNamePattern: /^[A-Za-z0-9]+(_[A-Za-z0-9]+)+$/,
+  checks: {
+    // ---- Metadata & publishing (provisional pending checklist) ----
+    "meta.title.present":   {section:"Map title & metadata", severity:"fail", provisional:true, name:"Title present and not a default", guide:"Map title should clearly indicate the subject of the map."},
+    "meta.title.length":    {section:"Map title & metadata", severity:"warn", name:"Title length", guide:"Avoid overly-lengthy titles to prevent the title being cut off in the app header."},
+    "meta.snippet":         {section:"Map title & metadata", severity:"fail", provisional:true, name:"Summary (snippet) present", guide:"The summary appears in galleries and search results."},
+    "meta.description":     {section:"Map title & metadata", severity:"warn", provisional:true, name:"Description present and substantive", guide:"Description should explain the map, its data, and any alternate projection."},
+    "meta.tags":            {section:"Map title & metadata", severity:"warn", provisional:true, name:"Tags", guide:"Tags support discovery in the MapMaker gallery."},
+    "meta.credits":         {section:"Map title & metadata", severity:"fail", provisional:true, name:"Credits / attribution", guide:"Data sources must be credited (item Credits field)."},
+    "meta.license":         {section:"Map title & metadata", severity:"warn", provisional:true, name:"Terms of use", guide:"Set terms of use so schools know how the map may be used."},
+    "meta.thumbnail":       {section:"Map title & metadata", severity:"warn", provisional:true, name:"Custom thumbnail", guide:"Default thumbnails look unfinished in the gallery."},
+    // ---- Extent, scale, projection ----
+    "extent.initial":       {section:"Extent & scale", severity:"warn", name:"Initial extent set and appropriate", guide:"Set initial extent to appropriate scale and focus area — a city map should not start at a global scale."},
+    "extent.visrange":      {section:"Extent & scale", severity:"info", name:"Visibility ranges", guide:"Use visibility ranges for individual layers as needed to avoid overcrowding of data and labels at small scales."},
+    "proj.explained":       {section:"Extent & scale", severity:"warn", name:"Alternate projection explained", guide:"If a projection other than Web Mercator is used, the description should explain it."},
+    "basemap.info":         {section:"Extent & scale", severity:"info", name:"Basemap", guide:"Ensure the basemap's colours and elements complement the thematic data, and thematic data aligns with basemap boundaries. (Manual review.)"},
+    // ---- Layers ----
+    "layer.count":          {section:"Layers", severity:"warn", name:"Layer count", guide:"Many layers hurt performance and legibility on Chromebooks and tablets."},
+    "layer.reachable":      {section:"Layers", severity:"fail", name:"All layers public and reachable", guide:"A public map with a private or broken layer will not draw for students."},
+    "layer.title":          {section:"Layers", severity:"warn", name:"Layer titles are plain language", guide:"Rename layers so they read in plain English (or the language of the map) rather than service names."},
+    "layer.renderer":       {section:"Layers", severity:"info", name:"Symbology set in the map", guide:"Layers using the service default symbology have not been styled for this map. (Check whether intentional.)"},
+    // ---- Pop-ups ----
+    "popup.configured":     {section:"Pop-ups", severity:"warn", name:"Pop-ups configured (not default all-fields)", guide:"Configure pop-ups so they are clear, well-labelled, and only contain relevant information."},
+    "popup.metafields":     {section:"Pop-ups", severity:"warn", name:"Metadata fields hidden", guide:"Hide unnecessary or metadata fields (OBJECTID, GlobalID, Shape_Length, edit tracking)."},
+    "popup.aliases":        {section:"Pop-ups", severity:"warn", name:"Fields renamed to plain language", guide:"Rename data fields so they read in plain language rather than abstract codes or IDs."},
+    "popup.many":           {section:"Pop-ups", severity:"info", name:"Pop-up field count", guide:"Long pop-ups are hard to read on small screens — show only relevant fields."},
+    // ---- Effects, fonts, labels ----
+    "effects.sparingly":    {section:"Visual effects & labels", severity:"warn", name:"Effects used sparingly", guide:"Map effects should be used sparingly to assist visual hierarchy; overuse looks busy or 'shaky'."},
+    "effects.recolour":     {section:"Visual effects & labels", severity:"warn", name:"No colour-altering effects", guide:"Beware effects that alter the colour of thematic data and are not reflected in the legend."},
+    "fonts.max":            {section:"Visual effects & labels", severity:"warn", name:"At most two fonts", guide:"Use at most two fonts, preferably one sans-serif font."},
+    "labels.halo":          {section:"Visual effects & labels", severity:"info", name:"Label halos", guide:"Type should be legible across various backgrounds — use subtle halos for contrast as necessary."},
+    // ---- Symbology & legend ----
+    "sym.count-choropleth": {section:"Symbology & legend", severity:"warn", name:"Counts not mapped as choropleth", guide:"Count data should not be symbolised as choropleth — normalise to rates or percentages first."},
+    "sym.ramp-order":       {section:"Symbology & legend", severity:"warn", name:"Class-break ramp reads sequential or diverging", guide:"Apply appropriate colour ramps: sequential for high–low data, diverging to emphasise a middle value."},
+    "sym.unique-distinct":  {section:"Symbology & legend", severity:"warn", name:"Categorical classes have distinct colours", guide:"Qualitative or categorical data should use classes with different hues."},
+    "sym.prop-size":        {section:"Symbology & legend", severity:"warn", name:"Proportional symbol sizes discernible", guide:"When using proportional symbols, ensure sizes are easily discernible."},
+    "legend.labels":        {section:"Symbology & legend", severity:"warn", name:"Legend labels are readable and include units", guide:"Legend items should be clearly labelled and include units for quantitative data; avoid raw field names."},
+    "sym.diverging-note":   {section:"Symbology & legend", severity:"info", name:"Diverging ramp pivot explained", guide:"If a diverging scheme is used, explain the value at the divergence in the legend or description."}
+  }
+};
+document.getElementById('ver').textContent = 'rubric v' + RUBRIC.version;
+
+/* ============================================================
+   Fetch helpers
+   ============================================================ */
+const PORTAL = 'https://www.arcgis.com/sharing/rest';
+async function getJSON(url){
+  const r = await fetch(url, {cache:'no-store'});
+  if(!r.ok) throw new Error(`HTTP ${r.status}`);
+  const j = await r.json();
+  if(j.error) throw new Error(j.error.message || JSON.stringify(j.error));
+  return j;
+}
+function parseInput(s){
+  s = s.trim();
+  const m = s.match(/(?:webmap|id)=([0-9a-f]{32})/i) || s.match(/\b([0-9a-f]{32})\b/i);
+  return m ? m[1] : null;
+}
+async function fetchItem(id){
+  const item = await getJSON(`${PORTAL}/content/items/${id}?f=json`);
+  return item;
+}
+async function fetchData(id){ return getJSON(`${PORTAL}/content/items/${id}/data?f=json`); }
+async function fetchGroupMaps(gid){
+  const out=[]; let start=1;
+  while(true){
+    const j = await getJSON(`${PORTAL}/content/groups/${gid}/search?f=json&num=100&start=${start}&q=type:"Web Map"`);
+    out.push(...j.results.filter(r=>r.type==='Web Map'));
+    if(j.nextStart<=0) break; start=j.nextStart;
+  }
+  return out;
+}
+async function probeLayer(url){
+  try{
+    const j = await getJSON(url + (url.includes('?')?'&':'?') + 'f=json');
+    return {ok:true, info:j};
+  }catch(e){ return {ok:false, err:e.message}; }
+}
+async function mapLimit(items, n, fn){
+  const res=new Array(items.length); let i=0;
+  await Promise.all(Array.from({length:Math.min(n,items.length)}, async()=>{
+    while(i<items.length){ const k=i++; res[k]=await fn(items[k],k); }
+  }));
+  return res;
+}
+
+/* ============================================================
+   Colour helpers
+   ============================================================ */
+function lum([r,g,b]){ const f=c=>{c/=255;return c<=.03928?c/12.92:Math.pow((c+.055)/1.055,2.4)}; return .2126*f(r)+.7152*f(g)+.0722*f(b); }
+function rgbOf(sym){
+  if(!sym) return null;
+  if(sym.color && Array.isArray(sym.color)) return sym.color.slice(0,3);
+  if(sym.symbolLayers){ for(const l of sym.symbolLayers){ if(l.material && l.material.color) return l.material.color.slice(0,3); } }
+  return null;
+}
+function colourDist(a,b){ return Math.sqrt(a.reduce((s,v,i)=>s+(v-b[i])**2,0)); }
+
+/* ============================================================
+   Checks
+   ============================================================ */
+function makeResults(){ const r={}; for(const id in RUBRIC.checks) r[id]={id, status:'pass', msg:'', evidence:[]}; return r; }
+function set(res,id,status,msg,ev){ const r=res[id]; r.status=status; r.msg=msg; if(ev) r.evidence.push(...[].concat(ev)); }
+function note(res,id,ev){ res[id].evidence.push(...[].concat(ev)); }
+function sev(id,fallback){ return RUBRIC.checks[id].severity==='info' ? 'info' : (fallback || RUBRIC.checks[id].severity); }
+
+async function audit(itemId, onProgress){
+  const T=RUBRIC.thresholds; const res=makeResults();
+  onProgress && onProgress('Fetching item…');
+  const item = await fetchItem(itemId);
+  if(item.type!=='Web Map') throw new Error(`Item is a ${item.type}, not a Web Map`);
+  const data = await fetchData(itemId);
+  const layers = (data.operationalLayers||[]).flatMap(flattenLayer);
+
+  // ---- Metadata
+  const title=(item.title||'').trim();
+  if(!title || /^untitled/i.test(title) || /^map\d*$/i.test(title)) set(res,'meta.title.present','fail','Title missing or default.',`title: "${title}"`);
+  else note(res,'meta.title.present',`title: "${title}"`);
+  if(title.length>T.titleMax) set(res,'meta.title.length','warn',`Title is ${title.length} characters (guideline ≤ ${T.titleMax}).`,`title length: ${title.length}`);
+  else if(/\.(csv|shp|gdb|zip|xlsx)$/i.test(title)||RUBRIC.serviceNamePattern.test(title)) set(res,'meta.title.length','warn','Title looks like a filename or service name.',`title: "${title}"`);
+  else note(res,'meta.title.length',`title length: ${title.length}`);
+  if(!(item.snippet||'').trim()) set(res,'meta.snippet','fail','No summary set.','snippet: empty'); else note(res,'meta.snippet',`snippet: ${item.snippet.length} chars`);
+  const desc=stripHtml(item.description||'');
+  if(desc.length<T.descriptionMin) set(res,'meta.description','warn',desc.length?`Description is short (${desc.length} chars).`:'No description.',`description: ${desc.length} chars`);
+  else note(res,'meta.description',`description: ${desc.length} chars`);
+  const tags=item.tags||[];
+  if(tags.length<T.tagsMin) set(res,'meta.tags','warn',`${tags.length} tag(s); guideline ≥ ${T.tagsMin}.`,`tags: ${tags.join(', ')||'none'}`); else note(res,'meta.tags',`tags: ${tags.join(', ')}`);
+  if(!(item.accessInformation||'').trim()) set(res,'meta.credits','fail','Credits (attribution) field is empty.','accessInformation: empty'); else note(res,'meta.credits',`credits: ${item.accessInformation}`);
+  if(!stripHtml(item.licenseInfo||'').trim()) set(res,'meta.license','warn','No terms of use set.','licenseInfo: empty'); else note(res,'meta.license','licenseInfo: set');
+  if(!item.thumbnail) set(res,'meta.thumbnail','warn','No custom thumbnail — the default will show in galleries.','thumbnail: none'); else note(res,'meta.thumbnail',`thumbnail: ${item.thumbnail}`);
+
+  // ---- Extent & projection
+  const vp = data.initialState && data.initialState.viewpoint;
+  const ext = vp && vp.targetGeometry;
+  const wkid = (data.spatialReference && (data.spatialReference.latestWkid||data.spatialReference.wkid)) || (ext && ext.spatialReference && (ext.spatialReference.latestWkid||ext.spatialReference.wkid));
+  if(!ext) set(res,'extent.initial','warn','No initial extent saved in the map.','initialState.viewpoint: missing');
+  else{
+    let widthDeg=null;
+    if(ext.spatialReference && (ext.spatialReference.wkid===4326)) widthDeg=ext.xmax-ext.xmin;
+    else if(ext.spatialReference && (ext.spatialReference.wkid===102100||ext.spatialReference.latestWkid===3857)) widthDeg=(ext.xmax-ext.xmin)/111319.49;
+    const ev=[`extent: ${round(ext.xmin)}, ${round(ext.ymin)} → ${round(ext.xmax)}, ${round(ext.ymax)} (wkid ${ext.spatialReference&&(ext.spatialReference.latestWkid||ext.spatialReference.wkid)})`];
+    if(widthDeg!==null && widthDeg>=T.globalScaleMinWidthDeg){
+      const local = layers.some(l=>/\b(city|county|district|province|state|region|town|island|park|school)\b/i.test(l.title||''));
+      set(res,'extent.initial', local?'warn':'info', local?'Map opens at a global scale but layer names suggest a local focus.':'Map opens at a global scale — confirm this is intended.', ev.concat(`width ≈ ${Math.round(widthDeg)}°`));
+    } else note(res,'extent.initial', ev.concat(widthDeg!==null?`width ≈ ${Math.round(widthDeg)}°`:''));
+  }
+  const noRange = layers.filter(l=>l.kind==='feature' && !(l.minScale||l.maxScale));
+  if(layers.length>3 && noRange.length===layers.length) set(res,'extent.visrange','info',`None of ${layers.length} layers use a visibility range.`, noRange.map(l=>l.title));
+  else note(res,'extent.visrange',`${layers.length-noRange.length} of ${layers.length} feature layers have a visibility range`);
+  const bm=data.baseMap||{}; const bmTitle=bm.title||'(untitled)';
+  set(res,'basemap.info','info',`Basemap: ${bmTitle}.`,[`baseMap.title: ${bmTitle}`, `spatial reference wkid: ${wkid||'unknown'}`, ...(bm.baseMapLayers||[]).map(b=>b.title||b.url||b.id)]);
+  if(wkid && wkid!==3857 && wkid!==102100 && wkid!==102113){
+    if(!/projection|projected|conic|equal.?area|winkel|robinson|mollweide|azimuthal|equidistant|polar/i.test(desc)) set(res,'proj.explained','warn',`Map uses a non–Web Mercator spatial reference (wkid ${wkid}) and the description does not mention the projection.`,`wkid: ${wkid}`);
+    else note(res,'proj.explained',`wkid ${wkid}; description mentions projection`);
+  } else note(res,'proj.explained',`wkid ${wkid||'3857'} (Web Mercator)`);
+
+  // ---- Layers
+  if(layers.length>T.layersMaxSoft) set(res,'layer.count','warn',`${layers.length} operational layers.`,layers.map(l=>l.title));
+  else note(res,'layer.count',`${layers.length} operational layers`);
+  onProgress && onProgress(`Probing ${layers.length} layer services…`);
+  const probes = await mapLimit(layers,4, async l=> l.url ? await probeLayer(l.url) : {ok:true, info:null, skipped:true});
+  const broken = layers.filter((l,i)=>!probes[i].ok);
+  if(broken.length) set(res,'layer.reachable','fail',`${broken.length} layer(s) could not be read anonymously.`, broken.map((l)=>`${l.title}: ${l.url} — ${probes[layers.indexOf(l)].err}`));
+  else note(res,'layer.reachable',layers.map(l=>`${l.title}: ${l.url? 'ok':'(no url — embedded)'}`));
+  const badTitles = layers.filter(l=>RUBRIC.serviceNamePattern.test(l.title||'')||/\s-\s\w+$/.test(l.title||''));
+  if(badTitles.length) set(res,'layer.title','warn',`${badTitles.length} layer title(s) look like service names.`,badTitles.map(l=>l.title));
+  else note(res,'layer.title',layers.map(l=>l.title));
+  const noRenderer = layers.filter(l=>l.kind==='feature' && !l.renderer);
+  if(noRenderer.length) set(res,'layer.renderer','info',`${noRenderer.length} layer(s) use service default symbology.`,noRenderer.map(l=>l.title));
+  else note(res,'layer.renderer','all feature layers have a renderer defined in the map');
+
+  // ---- Popups
+  const noPopup=[], metaVisible=[], codeAliases=[], manyFields=[];
+  layers.forEach((l,i)=>{
+    if(l.kind!=='feature') return;
+    const svcFields = probes[i].info && probes[i].info.fields ? probes[i].info.fields : (l.fields||[]);
+    if(l.disablePopup) return; // off — fine
+    if(!l.popupInfo){ noPopup.push(`${l.title} (${svcFields.length||'?'} fields would show)`); return; }
+    const fi=(l.popupInfo.fieldInfos||[]).filter(f=>f.visible!==false);
+    const shownNames=fi.map(f=>f.fieldName);
+    const meta=fi.filter(f=>RUBRIC.metadataFieldPattern.test(f.fieldName));
+    if(meta.length) metaVisible.push(`${l.title}: ${meta.map(f=>f.fieldName).join(', ')}`);
+    const codes=fi.filter(f=>{ const label=(f.label||f.fieldName||'').trim(); const raw=f.fieldName||''; const svcAlias=(svcFields.find(s=>s.name===raw)||{}).alias; const eff = f.label||svcAlias||raw; return eff===raw && RUBRIC.codeLikeFieldPattern.test(raw) && !RUBRIC.metadataFieldPattern.test(raw); });
+    if(codes.length) codeAliases.push(`${l.title}: ${codes.map(f=>f.fieldName).join(', ')}`);
+    if(fi.length>T.popupFieldsManySoft) manyFields.push(`${l.title}: ${fi.length} visible fields`);
+    // "configured" heuristic: no title, all fields visible, no custom content
+    const custom = l.popupInfo.title || l.popupInfo.description || (l.popupInfo.popupElements&&l.popupInfo.popupElements.length) || (l.popupInfo.mediaInfos&&l.popupInfo.mediaInfos.length) || (l.popupInfo.fieldInfos||[]).some(f=>f.visible===false);
+    if(!custom && fi.length>=3) noPopup.push(`${l.title} (popup present but shows all ${fi.length} fields, no title)`);
+  });
+  if(noPopup.length) set(res,'popup.configured','warn',`${noPopup.length} layer(s) show a default pop-up.`,noPopup); else note(res,'popup.configured','all feature layers have a configured pop-up or pop-ups disabled');
+  if(metaVisible.length) set(res,'popup.metafields','warn',`Metadata fields visible in ${metaVisible.length} layer(s).`,metaVisible); else note(res,'popup.metafields','no metadata fields visible');
+  if(codeAliases.length) set(res,'popup.aliases','warn',`Code-like field names shown without a plain-language label in ${codeAliases.length} layer(s).`,codeAliases); else note(res,'popup.aliases','visible fields have readable labels');
+  if(manyFields.length) set(res,'popup.many','info',`Long pop-ups in ${manyFields.length} layer(s).`,manyFields); else note(res,'popup.many','pop-ups within field-count guideline');
+
+  // ---- Effects, fonts, labels
+  const withEffects = layers.filter(l=>l.effect || (l.blendMode && l.blendMode!=='normal'));
+  if(withEffects.length>T.effectsLayersSoft) set(res,'effects.sparingly','warn',`${withEffects.length} layers use effects or blend modes.`,withEffects.map(l=>`${l.title}: ${describeEffect(l)}`));
+  else note(res,'effects.sparingly',withEffects.length?withEffects.map(l=>`${l.title}: ${describeEffect(l)}`):'no layer effects');
+  const recolour = layers.filter(l=>/hue-rotate|invert|sepia|grayscale|saturate/i.test(effectString(l)));
+  if(recolour.length) set(res,'effects.recolour','warn',`${recolour.length} layer(s) use an effect that changes data colours.`,recolour.map(l=>`${l.title}: ${describeEffect(l)}`));
+  else note(res,'effects.recolour','no colour-altering effects');
+  const fonts=new Set(); const noHalo=[];
+  layers.forEach(l=>{ (l.labelingInfo||[]).forEach(li=>{ const s=li.symbol||{}; const f=(s.font&&s.font.family)||(s.symbolLayers&&s.symbolLayers[0]&&s.symbolLayers[0].font&&s.symbolLayers[0].font.family); if(f) fonts.add(f); const halo = s.haloSize>0 || (s.symbolLayers&&s.symbolLayers.some(sl=>sl.halo)); if(!halo) noHalo.push(`${l.title}: ${f||'default font'}`); }); });
+  if(fonts.size>T.fontsMax) set(res,'fonts.max','warn',`${fonts.size} label fonts in use.`,[...fonts]); else note(res,'fonts.max',fonts.size?[...fonts]:'no map labels');
+  if(noHalo.length) set(res,'labels.halo','info',`${noHalo.length} label class(es) without a halo.`,noHalo); else note(res,'labels.halo','all label classes have halos');
+
+  // ---- Symbology & legend
+  const cntChoro=[], rampBad=[], uniqDup=[], propBad=[], legendBad=[], divergingUsed=[];
+  layers.forEach(l=>{
+    const r=l.renderer; if(!r) return;
+    const geom=(l.geometryType||'').toLowerCase();
+    if(r.type==='classBreaks'){
+      const field=r.field||'';
+      if(/polygon/.test(geom) && !r.normalizationType && !r.normalizationField && RUBRIC.countFieldPattern.test(field) && !/(pct|percent|rate|per_?\d|density|ratio|index|share|mean|avg|median)/i.test(field)) cntChoro.push(`${l.title}: field "${field}" with no normalisation`);
+      const cols=(r.classBreakInfos||[]).map(ci=>rgbOf(ci.symbol)).filter(Boolean);
+      if(cols.length>=3){
+        const L=cols.map(lum); const d=L.slice(1).map((v,i)=>v-L[i]);
+        const mono = d.every(x=>x>=-.005)||d.every(x=>x<=.005);
+        let turns=0; for(let i=1;i<d.length;i++) if(Math.sign(d[i])!==Math.sign(d[i-1]) && Math.abs(d[i])>.01 && Math.abs(d[i-1])>.01) turns++;
+        if(!mono && turns>1) rampBad.push(`${l.title}: luminance sequence ${L.map(v=>v.toFixed(2)).join(' → ')}`);
+        if(!mono && turns===1) divergingUsed.push(`${l.title}: field "${field}"`);
+      }
+      const labs=(r.classBreakInfos||[]).map(ci=>ci.label||'');
+      const unitless = labs.length && labs.every(x=>/^[\s\d.,\-–>≤≥<+]*$/.test(x));
+      const hasUnitHint = /(%|percent|per\s|km|mi\b|m\b|ft|°|\$|€|£|people|tonnes|tons|kg|years|days|index)/i.test(labs.join(' ')+' '+(l.title||'')+' '+((r.legendOptions&&r.legendOptions.title)||''));
+      if(unitless && !hasUnitHint) legendBad.push(`${l.title}: class labels are bare numbers, no units in labels, legend title, or layer title (${labs.slice(0,3).join(' | ')}…)`);
+      if(RUBRIC.codeLikeFieldPattern.test(field) && !(r.legendOptions&&r.legendOptions.title)) legendBad.push(`${l.title}: legend headed by raw field "${field}"`);
+    }
+    if(r.type==='uniqueValue'){
+      const cols=(r.uniqueValueInfos||[]).map(ci=>rgbOf(ci.symbol)).filter(Boolean);
+      const dup=[]; for(let i=0;i<cols.length;i++) for(let j=i+1;j<cols.length;j++) if(colourDist(cols[i],cols[j])<25) dup.push(`${i+1}~${j+1}`);
+      if(dup.length) uniqDup.push(`${l.title}: ${dup.length} near-identical colour pair(s) among ${cols.length} classes`);
+      const f=[r.field1,r.field2,r.field3].filter(Boolean).join(',');
+      if(RUBRIC.codeLikeFieldPattern.test(f) && !(r.legendOptions&&r.legendOptions.title)) legendBad.push(`${l.title}: legend headed by raw field "${f}"`);
+    }
+    (r.visualVariables||[]).forEach(vv=>{
+      if(vv.type==='sizeInfo' && vv.minSize && vv.maxSize && (vv.maxSize/vv.minSize)<T.propSymbolMinRatio) propBad.push(`${l.title}: size ${vv.minSize}–${vv.maxSize}px`);
+      if(vv.type==='colorInfo' && vv.stops && vv.stops.length>=3){ const L=vv.stops.map(s=>lum(s.color.slice(0,3))); const d=L.slice(1).map((v,i)=>v-L[i]); let turns=0; for(let i=1;i<d.length;i++) if(Math.sign(d[i])!==Math.sign(d[i-1])&&Math.abs(d[i])>.01&&Math.abs(d[i-1])>.01) turns++; if(turns>1) rampBad.push(`${l.title}: continuous colour stops not sequential/diverging`); if(turns===1) divergingUsed.push(`${l.title}: continuous ramp on "${vv.field}"`); }
+    });
+  });
+  if(cntChoro.length) set(res,'sym.count-choropleth','warn',`${cntChoro.length} choropleth layer(s) appear to map raw counts.`,cntChoro); else note(res,'sym.count-choropleth','no unnormalised count choropleths detected');
+  if(rampBad.length) set(res,'sym.ramp-order','warn',`${rampBad.length} ramp(s) do not read as sequential or diverging.`,rampBad); else note(res,'sym.ramp-order','class-break ramps read sequential/diverging');
+  if(uniqDup.length) set(res,'sym.unique-distinct','warn',`${uniqDup.length} categorical layer(s) with near-identical class colours.`,uniqDup); else note(res,'sym.unique-distinct','categorical classes distinct');
+  if(propBad.length) set(res,'sym.prop-size','warn',`Proportional symbol size range too narrow.`,propBad); else note(res,'sym.prop-size','proportional symbol ranges OK / not used');
+  if(legendBad.length) set(res,'legend.labels','warn',`${legendBad.length} legend issue(s).`,legendBad); else note(res,'legend.labels','legend labels look readable');
+  if(divergingUsed.length) set(res,'sym.diverging-note','info',`Diverging ramp detected — confirm the pivot value is explained.`,divergingUsed); else note(res,'sym.diverging-note','no diverging ramps');
+
+  return {item, data, layers, results:res, auditedAt:new Date().toISOString(), rubricVersion:RUBRIC.version};
+}
+
+function flattenLayer(l){
+  if(l.layerType==='GroupLayer' && l.layers) return l.layers.flatMap(flattenLayer);
+  const ld=l.layerDefinition||{}; const fc=l.featureCollection;
+  let renderer = ld.drawingInfo && ld.drawingInfo.renderer; let geometryType=ld.geometryType; let fields=ld.fields; let labelingInfo=ld.drawingInfo&&ld.drawingInfo.labelingInfo; let popupInfo=l.popupInfo; let url=l.url;
+  if(fc && fc.layers && fc.layers[0]){ const f=fc.layers[0]; renderer=renderer||(f.layerDefinition&&f.layerDefinition.drawingInfo&&f.layerDefinition.drawingInfo.renderer); geometryType=geometryType||(f.layerDefinition&&f.layerDefinition.geometryType); fields=fields||(f.layerDefinition&&f.layerDefinition.fields); popupInfo=popupInfo||f.popupInfo; url=null; }
+  const kind = /Feature|CSV|GeoJSON|OGCFeature/i.test(l.layerType||'') || fc ? 'feature' : 'other';
+  return [{title:l.title||l.id, url, kind, layerType:l.layerType, renderer, geometryType, fields, labelingInfo, popupInfo, disablePopup:l.disablePopup, minScale:l.minScale||ld.minScale, maxScale:l.maxScale||ld.maxScale, effect:l.effect, blendMode:l.blendMode, opacity:l.opacity}];
+}
+function effectString(l){ if(!l.effect) return ''; return typeof l.effect==='string'? l.effect : JSON.stringify(l.effect); }
+function describeEffect(l){ const parts=[]; if(l.effect) parts.push(effectString(l).slice(0,80)); if(l.blendMode&&l.blendMode!=='normal') parts.push('blend: '+l.blendMode); return parts.join('; '); }
+function stripHtml(s){ return String(s).replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim(); }
+function round(n){ return Number(n).toFixed(0); }
+
+/* ============================================================
+   Rendering
+   ============================================================ */
+const $=id=>document.getElementById(id);
+function tally(res){ const t={fail:0,warn:0,info:0,pass:0}; for(const id in res) t[res[id].status]++; return t; }
+function verdict(t){ return t.fail?'blocked': t.warn?'review':'ready'; }
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function renderReport(a){
+  const {item, results}=a; const t=tally(results); const v=verdict(t);
+  const thumb = item.thumbnail? `${PORTAL}/content/items/${item.id}/info/${item.thumbnail}` : '';
+  const sections={}; for(const id in RUBRIC.checks){ const s=RUBRIC.checks[id].section; (sections[s]=sections[s]||[]).push(id); }
+  const order={fail:0,warn:1,info:2,pass:3,error:4};
+  let right='';
+  for(const s in sections){
+    const ids=sections[s].slice().sort((x,y)=>order[results[x].status]-order[results[y].status]);
+    const nonpass=ids.filter(i=>results[i].status!=='pass').length;
+    right+=`<div class="card section"><h3><span>${esc(s)}</span><span class="count">${nonpass?nonpass+' to look at':'all pass'}</span></h3>`;
+    for(const id of ids){ const c=RUBRIC.checks[id], r=results[id];
+      right+=`<div class="check ${r.status}"><div class="st">${r.status}</div><div><div class="name">${esc(c.name)}${c.provisional?'<span class="prov" title="Assumed publishing requirement — confirm against distributor checklist">provisional</span>':''}</div>${r.msg?`<div class="msg">${esc(r.msg)}</div>`:''}${r.evidence.length?`<div class="ev">${r.evidence.filter(Boolean).map(e=>`<span>${esc(e)}</span>`).join('')}</div>`:''}<div class="guide">${esc(c.guide)}</div></div></div>`;
+    }
+    right+='</div>';
+  }
+  const verdictText={ready:'No blocking issues. Ready for cartographer review.',review:'No blocking issues, but guideline warnings to resolve or justify before review.',blocked:'Publishing requirements not met — fix the failed items first.'}[v];
+  const left=`<div class="card mapcard">${thumb?`<img src="${thumb}" alt="">`:'<div style="aspect-ratio:2/1.3;background:#e5e8ee"></div>'}<div class="body"><h2>${esc(item.title||'(no title)')}</h2><div class="meta"><b>id</b> ${item.id}</div><div class="meta"><b>owner</b> ${esc(item.owner||'')}</div><div class="meta"><b>modified</b> ${new Date(item.modified).toISOString().slice(0,10)}</div><div class="meta"><b>layers</b> ${a.layers.length}</div><div class="tally"><span class="pill fail">${t.fail} fail</span><span class="pill warn">${t.warn} warn</span><span class="pill info">${t.info} info</span><span class="pill pass">${t.pass} pass</span></div><div class="verdict ${v}">${verdictText}</div><div class="actions"><button class="secondary" id="copyjson">Copy results as JSON</button><a href="https://www.arcgis.com/home/item.html?id=${item.id}" target="_blank" rel="noopener"><button class="secondary">Open item</button></a></div></div></div>`;
+  $('out').innerHTML=`<div class="report">${left}<div>${right}</div></div>`;
+  $('copyjson').onclick=()=>{ navigator.clipboard.writeText(JSON.stringify(exportJSON(a),null,2)); $('copyjson').textContent='Copied'; setTimeout(()=>$('copyjson').textContent='Copy results as JSON',1500); };
+  $('toggle').disabled=false;
+}
+function exportJSON(a){ return {itemId:a.item.id, title:a.item.title, owner:a.item.owner, auditedAt:a.auditedAt, rubricVersion:a.rubricVersion, standards:RUBRIC.standardsRef, tally:tally(a.results), verdict:verdict(tally(a.results)), checks:Object.values(a.results).map(r=>({id:r.id, section:RUBRIC.checks[r.id].section, name:RUBRIC.checks[r.id].name, severity:RUBRIC.checks[r.id].severity, provisional:!!RUBRIC.checks[r.id].provisional, status:r.status, message:r.msg, evidence:r.evidence.filter(Boolean)}))}; }
+
+async function runBatch(gid){
+  $('status').textContent='Listing web maps in group…';
+  const maps=await fetchGroupMaps(gid);
+  if(!maps.length){ $('status').textContent='No public web maps found in that group.'; return; }
+  const rows=[]; const audits={};
+  for(let i=0;i<maps.length;i++){
+    $('status').textContent=`Auditing ${i+1} of ${maps.length}: ${maps[i].title}`;
+    try{ const a=await audit(maps[i].id); audits[maps[i].id]=a; rows.push({id:maps[i].id,title:maps[i].title,owner:maps[i].owner,t:tally(a.results),v:verdict(tally(a.results))}); }
+    catch(e){ rows.push({id:maps[i].id,title:maps[i].title,owner:maps[i].owner,err:e.message}); }
+  }
+  $('status').textContent=`${maps.length} map(s) audited. Click a row for detail.`;
+  const order={blocked:0,review:1,ready:2};
+  rows.sort((a,b)=>(a.err?-1:order[a.v])-(b.err?-1:order[b.v]));
+  $('out').innerHTML=`<div class="batch"><div class="actions" style="margin-bottom:10px"><button class="secondary" id="copybatch">Copy batch as JSON</button></div><table class="batch"><thead><tr><th>Map</th><th>Owner</th><th>Verdict</th><th>Fail</th><th>Warn</th><th>Info</th></tr></thead><tbody>${rows.map(r=>`<tr data-id="${r.id}"><td>${esc(r.title)}<br><span class="n">${r.id}</span></td><td>${esc(r.owner||'')}</td><td>${r.err?`<span class="pill error">error</span> ${esc(r.err)}`:`<span class="pill ${r.v==='blocked'?'fail':r.v==='review'?'warn':'pass'}">${r.v}</span>`}</td><td class="n">${r.t?r.t.fail:''}</td><td class="n">${r.t?r.t.warn:''}</td><td class="n">${r.t?r.t.info:''}</td></tr>`).join('')}</tbody></table><div id="detail"></div></div>`;
+  $('copybatch').onclick=()=>{ navigator.clipboard.writeText(JSON.stringify({groupId:gid, auditedAt:new Date().toISOString(), rubricVersion:RUBRIC.version, maps:Object.values(audits).map(exportJSON)},null,2)); $('copybatch').textContent='Copied'; setTimeout(()=>$('copybatch').textContent='Copy batch as JSON',1500); };
+  document.querySelectorAll('table.batch tr[data-id]').forEach(tr=>tr.onclick=()=>{ const a=audits[tr.dataset.id]; if(!a) return; const keep=$('out').querySelector('.batch').outerHTML; renderReport(a); $('out').insertAdjacentHTML('afterbegin',keep); wireBatchRows(audits); window.scrollTo({top:$('out').querySelector('.report').offsetTop-20,behavior:'smooth'}); });
+}
+function wireBatchRows(audits){ document.querySelectorAll('table.batch tr[data-id]').forEach(tr=>tr.onclick=()=>{ const a=audits[tr.dataset.id]; if(!a) return; const keep=$('out').querySelector('.batch').outerHTML; renderReport(a); $('out').insertAdjacentHTML('afterbegin',keep); wireBatchRows(audits); }); }
+
+async function go(){
+  const id=parseInput($('q').value);
+  $('out').innerHTML=''; $('status').className=''; $('toggle').disabled=true;
+  if(!id){ $('status').className='err'; $('status').textContent='Enter a 32-character item or group ID, or a URL containing one.'; return; }
+  $('run').disabled=true;
+  try{
+    // Decide: item or group
+    let isGroup=false;
+    try{ const it=await fetchItem(id); if(it.type!=='Web Map'){ $('status').className='err'; $('status').textContent=`That item is a ${it.type}. Paste a Web Map or a group ID.`; $('run').disabled=false; return; } }
+    catch(e){ isGroup=true; }
+    if(isGroup){ await runBatch(id); }
+    else{ const a=await audit(id, m=>$('status').textContent=m); $('status').textContent=`Audited ${new Date(a.auditedAt).toLocaleString()} · rubric v${RUBRIC.version}`; renderReport(a); }
+    history.replaceState(null,'','?id='+id);
+  }catch(e){ $('status').className='err'; $('status').textContent=`Could not audit: ${e.message}. Is the item public?`; }
+  $('run').disabled=false;
+}
+$('run').onclick=go;
+$('q').addEventListener('keydown',e=>{ if(e.key==='Enter') go(); });
+$('toggle').onclick=()=>{ document.body.classList.toggle('showall'); $('toggle').textContent=document.body.classList.contains('showall')?'Hide pass detail':'Show passes in detail'; };
+const pre=new URLSearchParams(location.search).get('id'); if(pre){ $('q').value=pre; go(); }
+</script>
+</body>
+</html>
