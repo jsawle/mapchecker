@@ -54,6 +54,7 @@ button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .verdict.ready{background:var(--pass-bg);color:var(--pass)}
 .verdict.review{background:var(--warn-bg);color:var(--warn)}
 .verdict.blocked{background:var(--fail-bg);color:var(--fail)}
+.fixlist{margin-top:12px;font-size:13px}.fixlist .fixhead{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);font-weight:600;margin-bottom:4px}.fixlist ol{margin:0;padding-left:18px}.fixlist li{margin:2px 0}.fixlist li.fail{color:var(--fail)}.fixlist li.warn{color:var(--warn)}
 .actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
 .actions button{padding:7px 12px;font-size:13px}
 .section{margin-bottom:18px}
@@ -109,7 +110,7 @@ footer{max-width:1180px;margin:40px auto 0;padding:0 28px;font-size:12px;color:v
    provisional: true = metadata requirement assumed, pending the distributor checklist
    ============================================================ */
 const RUBRIC = {
-  version: "0.3.1",
+  version: "0.4.0",
   standardsRef: "General Cartographic Standards for MapMaker",
   thresholds: {
     titleMax: 60,
@@ -142,7 +143,7 @@ const RUBRIC = {
     "meta.description":     {section:"Map title & metadata", severity:"warn", provisional:true, name:"Description present and substantive", guide:"Description should explain the map, its data, and any alternate projection."},
     "meta.tags":            {section:"Map title & metadata", severity:"warn", provisional:true, name:"Tags", guide:"Tags support discovery in the MapMaker gallery."},
     "meta.credits":         {section:"Map title & metadata", severity:"fail", provisional:true, name:"Credits / attribution", guide:"Data sources must be credited (item Credits field)."},
-    "meta.license":         {section:"Map title & metadata", severity:"warn", provisional:true, name:"Terms of use", guide:"Set terms of use so schools know how the map may be used."},
+    "meta.license":         {section:"Map title & metadata", severity:"fail", name:"Terms of use", guide:"Set terms of use so schools know how the map may be used."},
     "meta.thumbnail":       {section:"Map title & metadata", severity:"warn", provisional:true, name:"Custom thumbnail", guide:"Default thumbnails look unfinished in the gallery."},
     // ---- Extent, scale, projection ----
     "extent.initial":       {section:"Extent & scale", severity:"warn", name:"Initial extent set and appropriate", guide:"Set initial extent to appropriate scale and focus area — a city map should not start at a global scale."},
@@ -153,6 +154,7 @@ const RUBRIC = {
     "layer.count":          {section:"Layers", severity:"warn", name:"Layer count", guide:"Many layers hurt performance and legibility on Chromebooks and tablets."},
     "layer.reachable":      {section:"Layers", severity:"fail", name:"All layers public and reachable", guide:"A public map with a private or broken layer will not draw for students."},
     "layer.title":          {section:"Layers", severity:"warn", name:"Layer titles are plain language", guide:"Rename layers so they read in plain English (or the language of the map) rather than service names."},
+    "layer.fields":         {section:"Layers", severity:"info", name:"Layer field count", guide:"Layers with very many fields are slow to load and hard to configure — consider publishing a view with only the fields the map needs."},
     "layer.renderer":       {section:"Layers", severity:"info", name:"Symbology set in the map", guide:"Layers using the service default symbology have not been styled for this map. (Check whether intentional.)"},
     // ---- Pop-ups ----
     "popup.configured":     {section:"Pop-ups", severity:"fail", name:"Pop-ups configured (not default all-fields)", guide:"Configure pop-ups so they are clear, well-labelled, and only contain relevant information."},
@@ -234,8 +236,21 @@ function rgbOf(sym){
   if(!sym) return null;
   if(sym.color && Array.isArray(sym.color)) return sym.color.slice(0,3);
   if(sym.symbolLayers){ for(const l of sym.symbolLayers){ if(l.material && l.material.color) return l.material.color.slice(0,3); } }
+  if(sym.type==='CIMSymbolReference' && sym.symbol) return cimColour(sym.symbol);
   return null;
 }
+// Walk a CIM symbol for the first fill/stroke colour (CIMRGBColor / CIMHSVColor / CIMCMYKColor values)
+function cimColour(node, depth=0){
+  if(!node || depth>8) return null;
+  if(Array.isArray(node)){ for(const n of node){ const c=cimColour(n,depth+1); if(c) return c; } return null; }
+  if(typeof node!=='object') return null;
+  // prefer fills over strokes: check solid fill layers first
+  if(node.symbolLayers){ const fills=node.symbolLayers.filter(l=>/Fill|Marker|Picture/.test(l.type||'')); const c=cimColour(fills.length?fills:node.symbolLayers,depth+1); if(c) return c; }
+  if(node.color && node.color.values && Array.isArray(node.color.values)){ const v=node.color.values; if(node.color.type==='CIMRGBColor') return v.slice(0,3).map(Math.round); if(node.color.type==='CIMHSVColor') return hsv2rgb(v[0],v[1],v[2]); if(node.color.type==='CIMCMYKColor') return [255*(1-v[0]/100)*(1-v[3]/100),255*(1-v[1]/100)*(1-v[3]/100),255*(1-v[2]/100)*(1-v[3]/100)].map(Math.round); if(node.color.type==='CIMGrayColor') return [v[0],v[0],v[0]].map(Math.round); }
+  for(const k of ['markerGraphics','symbol','fillColor','frame']){ if(node[k]){ const c=cimColour(node[k],depth+1); if(c) return c; } }
+  return null;
+}
+function hsv2rgb(h,s,v){ s/=100;v/=100; const c=v*s,x=c*(1-Math.abs((h/60)%2-1)),m=v-c; let r,g,b; if(h<60)[r,g,b]=[c,x,0];else if(h<120)[r,g,b]=[x,c,0];else if(h<180)[r,g,b]=[0,c,x];else if(h<240)[r,g,b]=[0,x,c];else if(h<300)[r,g,b]=[x,0,c];else [r,g,b]=[c,0,x]; return [(r+m)*255,(g+m)*255,(b+m)*255].map(Math.round); }
 function colourDist(a,b){ return Math.sqrt(a.reduce((s,v,i)=>s+(v-b[i])**2,0)); }
 // sRGB -> linear -> XYZ -> CIELAB
 function srgb2lin(c){ c/=255; return c<=.04045? c/12.92 : Math.pow((c+.055)/1.055,2.4); }
@@ -304,17 +319,21 @@ async function audit(itemId, onProgress){
   if(title.length>T.titleMax) set(res,'meta.title.length','warn',`Title is ${title.length} characters (guideline ≤ ${T.titleMax}).`,`title length: ${title.length}`);
   else if(/\.(csv|shp|gdb|zip|xlsx)$/i.test(title)||RUBRIC.serviceNamePattern.test(title)) set(res,'meta.title.length','warn','Title looks like a filename or service name.',`title: "${title}"`);
   else note(res,'meta.title.length',`title length: ${title.length}`);
-  const abbr=[...new Set((title.match(/\b[A-ZÁÉÍÓÚÑ]{2,6}\b|\b[A-Za-z]*(?:[bcdfghjklmnpqrstvwxz]){4,}[A-Za-z]*\b/g)||[]).filter(w=>!RUBRIC.abbrevAllow.test(w)&&!/^\d+$/.test(w)))];
-  if(abbr.length) set(res,'meta.title.abbrev','warn',`Title contains abbreviation(s): ${abbr.join(', ')}. Spell out unless the description explains them.`,`title: "${title}"`); else note(res,'meta.title.abbrev',`title: "${title}"`);
-  if(!(item.snippet||'').trim()) set(res,'meta.snippet','fail','No summary set.','snippet: empty'); else note(res,'meta.snippet',`snippet: ${item.snippet.length} chars`);
   const desc=stripHtml(item.description||'');
+  const abbr=[...new Set((title.match(/\b[A-ZÁÉÍÓÚÑ]{2,6}\b|\b[A-Za-z]*(?:[bcdfghjklmnpqrstvwxz]){4,}[A-Za-z]*\b/g)||[]).filter(w=>!RUBRIC.abbrevAllow.test(w)&&!/^\d+$/.test(w)))];
+  const explained = abbr.filter(a=>new RegExp('\\('+a+'\\)|\\b'+a+'\\s*[:=–-]|\\b'+a+'\\b.{0,3}\\(','i').test(desc+' '+(item.snippet||'')));
+  const unexplained = abbr.filter(a=>!explained.includes(a));
+  if(unexplained.length) set(res,'meta.title.abbrev','warn',`Title contains abbreviation(s) not expanded in the summary or description: ${unexplained.join(', ')}.`,`title: "${title}"`);
+  else if(abbr.length) set(res,'meta.title.abbrev','info',`Title uses abbreviation(s) ${abbr.join(', ')} — expanded in the description, but consider spelling out in the title for students.`,`title: "${title}"`);
+  else note(res,'meta.title.abbrev',`title: "${title}"`);
+  if(!(item.snippet||'').trim()) set(res,'meta.snippet','fail','No summary set.','snippet: empty'); else note(res,'meta.snippet',`snippet: ${item.snippet.length} chars`);
   if(desc.length<T.descriptionMin) set(res,'meta.description','warn',desc.length?`Description is short (${desc.length} chars).`:'No description.',`description: ${desc.length} chars`);
   else note(res,'meta.description',`description: ${desc.length} chars`);
   const tags=item.tags||[];
   if(tags.length<T.tagsMin) set(res,'meta.tags','warn',`${tags.length} tag(s); guideline ≥ ${T.tagsMin}.`,`tags: ${tags.join(', ')||'none'}`); else note(res,'meta.tags',`tags: ${tags.join(', ')}`);
   if(!(item.accessInformation||'').trim()) set(res,'meta.credits','fail','Credits (attribution) field is empty.','accessInformation: empty'); else note(res,'meta.credits',`credits: ${item.accessInformation}`);
   if(!stripHtml(item.licenseInfo||'').trim()) set(res,'meta.license','fail','No terms of use set.','licenseInfo: empty'); else note(res,'meta.license','licenseInfo: set');
-  if(!item.thumbnail) set(res,'meta.thumbnail','warn','No custom thumbnail — the default will show in galleries.','thumbnail: none'); else note(res,'meta.thumbnail',`thumbnail: ${item.thumbnail}`);
+  if(!item.thumbnail) set(res,'meta.thumbnail','warn','No custom thumbnail — the default will show in galleries.','thumbnail: none'); else if(/ago_downloaded|thumbnail\.(png|jpe?g)$/i.test(item.thumbnail)) set(res,'meta.thumbnail','info','Thumbnail appears to be the auto-generated map capture — consider a designed thumbnail for the gallery.',`thumbnail: ${item.thumbnail}`); else note(res,'meta.thumbnail',`thumbnail: ${item.thumbnail}`);
 
   // ---- Extent & projection
   const vp = data.initialState && data.initialState.viewpoint;
@@ -352,6 +371,8 @@ async function audit(itemId, onProgress){
   const badTitles = layers.filter(l=>RUBRIC.serviceNamePattern.test(l.title||'')||/\s-\s\w+$/.test(l.title||''));
   if(badTitles.length) set(res,'layer.title','warn',`${badTitles.length} layer title(s) look like service names.`,badTitles.map(l=>l.title));
   else note(res,'layer.title',layers.map(l=>l.title));
+  const heavy = layers.map((l,i)=>({l, n:(probes[i].info&&probes[i].info.fields?probes[i].info.fields.length:(l.fields||[]).length)})).filter(x=>x.n>50);
+  if(heavy.length) set(res,'layer.fields','info',`${heavy.length} layer(s) with more than 50 fields.`,heavy.map(x=>`${x.l.title}: ${x.n} fields`)); else note(res,'layer.fields','field counts reasonable');
   const noRenderer = layers.filter(l=>l.kind==='feature' && !l.renderer);
   if(noRenderer.length) set(res,'layer.renderer','info',`${noRenderer.length} layer(s) use service default symbology.`,noRenderer.map(l=>l.title));
   else note(res,'layer.renderer','all feature layers have a renderer defined in the map');
@@ -396,7 +417,7 @@ async function audit(itemId, onProgress){
   if(noHalo.length) set(res,'labels.halo','info',`${noHalo.length} label class(es) without a halo.`,noHalo); else note(res,'labels.halo','all label classes have halos');
 
   // ---- Symbology & legend
-  const cntChoro=[], rampBad=[], uniqDup=[], propBad=[], legendBad=[], divergingUsed=[], colourOnly=[], a11yColours=[], smallSym=[], smallLabel=[], lowOpacity=[];
+  const cntChoro=[], rampBad=[], uniqDup=[], propBad=[], legendBad=[], divergingUsed=[], colourOnly=[], a11yColours=[], smallSym=[], smallLabel=[], lowOpacity=[], unreadable=[]; let classRenderers=0;
   layers.forEach(l=>{
     if(typeof l.opacity==='number' && l.opacity<T.opacityMin) lowOpacity.push(`${l.title}: opacity ${l.opacity}`);
     (l.labelingInfo||[]).forEach(li=>{ const s=li.symbol||{}; const sz=(s.font&&s.font.size)||(s.symbolLayers&&s.symbolLayers[0]&&s.symbolLayers[0].size); if(sz && sz<T.labelFontMinPt) smallLabel.push(`${l.title}: ${sz}pt`); });
@@ -412,7 +433,9 @@ async function audit(itemId, onProgress){
     if(r.type==='classBreaks'){
       const field=r.field||'';
       if(/polygon/.test(geom) && !r.normalizationType && !r.normalizationField && RUBRIC.countFieldPattern.test(field) && !/(pct|percent|rate|per_?\d|density|ratio|index|share|mean|avg|median)/i.test(field)) cntChoro.push(`${l.title}: field "${field}" with no normalisation`);
+      classRenderers++;
       const cols=(r.classBreakInfos||[]).map(ci=>rgbOf(ci.symbol)).filter(Boolean);
+      if(cols.length<(r.classBreakInfos||[]).length) unreadable.push(`${l.title}: ${(r.classBreakInfos||[]).length-cols.length} of ${(r.classBreakInfos||[]).length} class symbols have no readable colour (${(r.classBreakInfos||[])[0]&&(r.classBreakInfos||[])[0].symbol?(r.classBreakInfos||[])[0].symbol.type:'?'})`);
       if(cols.length>=2) a11yColours.push({title:l.title, cols, adjacentOnly:true});
       if(cols.length>=3){
         const L=cols.map(lum); const d=L.slice(1).map((v,i)=>v-L[i]);
@@ -428,7 +451,9 @@ async function audit(itemId, onProgress){
       if(RUBRIC.codeLikeFieldPattern.test(field) && !(r.legendOptions&&r.legendOptions.title)) legendBad.push(`${l.title}: legend headed by raw field "${field}"`);
     }
     if(r.type==='uniqueValue'){
+      classRenderers++;
       const cols=(r.uniqueValueInfos||[]).map(ci=>rgbOf(ci.symbol)).filter(Boolean);
+      if(cols.length<(r.uniqueValueInfos||[]).length) unreadable.push(`${l.title}: ${(r.uniqueValueInfos||[]).length-cols.length} of ${(r.uniqueValueInfos||[]).length} class symbols have no readable colour`);
       if(cols.length>=2){ const {min,pair}=minPairDeltaE(cols,false); if(min<T.deltaEMin) uniqDup.push(`${l.title}: classes ${pair[0]} and ${pair[1]} ΔE ${min.toFixed(1)} (${rgbHex(cols[pair[0]-1])} vs ${rgbHex(cols[pair[1]-1])})`); }
       if(cols.length>8) colourOnly.push(`${l.title}: ${cols.length} categories`);
       a11yColours.push({title:l.title, cols, adjacentOnly:false});
@@ -446,15 +471,21 @@ async function audit(itemId, onProgress){
     const n=minPairDeltaE(cols,adjacentOnly); if(n.min<T.deltaEMin) contrastBad.push(`${title}: classes ${n.pair[0]}/${n.pair[1]} ΔE ${n.min.toFixed(1)} (normal vision)`);
     for(const type in CVD_MATRICES){ const sim=cols.map(c=>simulateCVD(c,type)); const m=minPairDeltaE(sim,adjacentOnly); if(m.min<T.deltaEMinCVD) cvdBad.push(`${title}: ${type} — classes ${m.pair[0]}/${m.pair[1]} ΔE ${m.min.toFixed(1)} (${rgbHex(cols[m.pair[0]-1])} vs ${rgbHex(cols[m.pair[1]-1])})`); }
   });
-  if(cvdBad.length) set(res,'a11y.cvd','warn',`${new Set(cvdBad.map(x=>x.split(':')[0])).size} layer(s) have classes that merge under colour-vision deficiency.`,cvdBad); else note(res,'a11y.cvd',a11yColours.length?`${a11yColours.length} renderer(s) checked under protan/deutan/tritan simulation (min ΔE ≥ ${T.deltaEMinCVD})`:'no class colours to test');
-  if(contrastBad.length) set(res,'a11y.contrast','warn',`${contrastBad.length} renderer(s) with low contrast between classes.`,contrastBad); else note(res,'a11y.contrast',a11yColours.length?`all adjacent classes ΔE ≥ ${T.deltaEMin}`:'no class colours to test');
+  const colourSkipMsg = classRenderers && !a11yColours.length ? 'Not assessed — class colours could not be read from the renderer (likely CIM or Arcade-driven symbols).' : null;
+  if(cvdBad.length) set(res,'a11y.cvd','warn',`${new Set(cvdBad.map(x=>x.split(':')[0])).size} layer(s) have classes that merge under colour-vision deficiency.`,cvdBad);
+  else if(colourSkipMsg) set(res,'a11y.cvd','skip',colourSkipMsg,unreadable);
+  else note(res,'a11y.cvd',a11yColours.length?`${a11yColours.length} renderer(s) checked under protan/deutan/tritan simulation (min ΔE ≥ ${T.deltaEMinCVD})`:'no classed renderers in map');
+  if(contrastBad.length) set(res,'a11y.contrast','warn',`${contrastBad.length} renderer(s) with low contrast between classes.`,contrastBad);
+  else if(colourSkipMsg) set(res,'a11y.contrast','skip',colourSkipMsg,unreadable);
+  else note(res,'a11y.contrast',a11yColours.length?`all adjacent classes ΔE ≥ ${T.deltaEMin}`:'no classed renderers in map');
+  if(unreadable.length && a11yColours.length) note(res,'a11y.cvd',unreadable.map(u=>'partial: '+u));
   if(smallSym.length) set(res,'a11y.symbol-size','warn',`${new Set(smallSym).size} small symbol size(s).`,[...new Set(smallSym)]); else note(res,'a11y.symbol-size','symbol sizes OK');
   if(smallLabel.length) set(res,'a11y.label-size','warn',`${smallLabel.length} label class(es) below ${T.labelFontMinPt}pt.`,smallLabel); else note(res,'a11y.label-size','label sizes OK / no labels');
   if(lowOpacity.length) set(res,'a11y.opacity','info',`${lowOpacity.length} layer(s) very transparent.`,lowOpacity); else note(res,'a11y.opacity','opacities OK');
   if(colourOnly.length) set(res,'a11y.colour-only','info',`Large categorical palettes rely on hue alone.`,colourOnly); else note(res,'a11y.colour-only','categorical class counts OK');
   if(cntChoro.length) set(res,'sym.count-choropleth','warn',`${cntChoro.length} choropleth layer(s) appear to map raw counts.`,cntChoro); else note(res,'sym.count-choropleth','no unnormalised count choropleths detected');
-  if(rampBad.length) set(res,'sym.ramp-order','warn',`${rampBad.length} ramp(s) do not read as sequential or diverging.`,rampBad); else note(res,'sym.ramp-order','class-break ramps read sequential/diverging');
-  if(uniqDup.length) set(res,'sym.unique-distinct','warn',`${uniqDup.length} categorical layer(s) with near-identical class colours.`,uniqDup); else note(res,'sym.unique-distinct','categorical classes distinct');
+  if(rampBad.length) set(res,'sym.ramp-order','warn',`${rampBad.length} ramp(s) do not read as sequential or diverging.`,rampBad); else if(colourSkipMsg) set(res,'sym.ramp-order','skip',colourSkipMsg); else note(res,'sym.ramp-order',a11yColours.length?'class-break ramps read sequential/diverging':'no class-break ramps');
+  if(uniqDup.length) set(res,'sym.unique-distinct','warn',`${uniqDup.length} categorical layer(s) with near-identical class colours.`,uniqDup); else if(colourSkipMsg) set(res,'sym.unique-distinct','skip',colourSkipMsg); else note(res,'sym.unique-distinct',a11yColours.length?'categorical classes distinct':'no categorical renderers');
   if(propBad.length) set(res,'sym.prop-size','warn',`Proportional symbol size range too narrow.`,propBad); else note(res,'sym.prop-size','proportional symbol ranges OK / not used');
   if(legendBad.length) set(res,'legend.labels','fail',`${legendBad.length} legend issue(s).`,legendBad); else note(res,'legend.labels','legend labels look readable');
   if(divergingUsed.length) set(res,'sym.diverging-note','info',`Diverging ramp detected — confirm the pivot value is explained.`,divergingUsed); else note(res,'sym.diverging-note','no diverging ramps');
@@ -498,11 +529,12 @@ function renderReport(a){
     right+='</div>';
   }
   const verdictText={ready:'No blocking issues. Ready for cartographer review.',review:'No blocking issues, but guideline warnings to resolve or justify before review.',blocked:'Publishing requirements not met — fix the failed items first.'}[v];
-  const left=`<div class="card mapcard">${thumb?`<img src="${thumb}" alt="">`:'<div style="aspect-ratio:2/1.3;background:#e5e8ee"></div>'}<div class="body"><h2>${esc(item.title||'(no title)')}</h2><div class="meta"><b>id</b> ${item.id}</div><div class="meta"><b>owner</b> ${esc(item.owner||'')}</div><div class="meta"><b>modified</b> ${new Date(item.modified).toISOString().slice(0,10)}</div><div class="meta"><b>layers</b> ${a.layers.length}</div><div class="tally"><span class="pill fail">${t.fail} fail</span><span class="pill warn">${t.warn} warn</span><span class="pill info">${t.info} info</span><span class="pill pass">${t.pass} pass</span></div><div class="verdict ${v}">${verdictText}</div><div class="actions"><button class="secondary" id="copyjson">Copy results as JSON</button><a href="https://www.arcgis.com/home/item.html?id=${item.id}" target="_blank" rel="noopener"><button class="secondary">Open item</button></a></div></div></div>`;
+  const left=`<div class="card mapcard">${thumb?`<img src="${thumb}" alt="">`:'<div style="aspect-ratio:2/1.3;background:#e5e8ee"></div>'}<div class="body"><h2>${esc(item.title||'(no title)')}</h2><div class="meta"><b>id</b> ${item.id}</div><div class="meta"><b>owner</b> ${esc(item.owner||'')}</div><div class="meta"><b>modified</b> ${new Date(item.modified).toISOString().slice(0,10)}</div><div class="meta"><b>layers</b> ${a.layers.length}</div><div class="tally"><span class="pill fail">${t.fail} fail</span><span class="pill warn">${t.warn} warn</span><span class="pill info">${t.info} info</span><span class="pill pass">${t.pass} pass</span></div><div class="verdict ${v}">${verdictText}</div>${fixList(results)}<div class="actions"><button class="secondary" id="copyjson">Copy results as JSON</button><a href="https://www.arcgis.com/home/item.html?id=${item.id}" target="_blank" rel="noopener"><button class="secondary">Open item</button></a></div></div></div>`;
   $('out').innerHTML=`<div class="report">${left}<div>${right}</div></div>`;
   $('copyjson').onclick=()=>{ navigator.clipboard.writeText(JSON.stringify(exportJSON(a),null,2)); $('copyjson').textContent='Copied'; setTimeout(()=>$('copyjson').textContent='Copy results as JSON',1500); };
   $('toggle').disabled=false;
 }
+function fixList(results){ const items=Object.values(results).filter(r=>r.status==='fail'||r.status==='warn').sort((a,b)=>(a.status==='fail'?0:1)-(b.status==='fail'?0:1)); if(!items.length) return ''; return `<div class="fixlist"><div class="fixhead">To fix</div><ol>${items.map(r=>`<li class="${r.status}">${esc(RUBRIC.checks[r.id].name)}</li>`).join('')}</ol></div>`; }
 function exportJSON(a){ return {itemId:a.item.id, title:a.item.title, owner:a.item.owner, auditedAt:a.auditedAt, rubricVersion:a.rubricVersion, standards:RUBRIC.standardsRef, tally:tally(a.results), verdict:verdict(tally(a.results)), checks:Object.values(a.results).map(r=>({id:r.id, section:RUBRIC.checks[r.id].section, name:RUBRIC.checks[r.id].name, severity:RUBRIC.checks[r.id].severity, provisional:!!RUBRIC.checks[r.id].provisional, status:r.status, message:r.msg, evidence:r.evidence.filter(Boolean)}))}; }
 
 async function runBatch(gid){
