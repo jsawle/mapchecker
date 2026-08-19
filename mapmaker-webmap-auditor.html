@@ -109,7 +109,7 @@ footer{max-width:1180px;margin:40px auto 0;padding:0 28px;font-size:12px;color:v
    provisional: true = metadata requirement assumed, pending the distributor checklist
    ============================================================ */
 const RUBRIC = {
-  version: "0.1.0",
+  version: "0.2.0",
   standardsRef: "General Cartographic Standards for MapMaker",
   thresholds: {
     titleMax: 60,
@@ -125,11 +125,13 @@ const RUBRIC = {
   metadataFieldPattern: /^(objectid|fid|globalid|shape(_|\.)?(length|area|leng|len|starea|stlength)?|shape__?(length|area)|created_(user|date)|last_edited_(user|date)|editdate|creator|editor)$/i,
   codeLikeFieldPattern: /(^[A-Z0-9_]{2,}$)|(_)|(^[a-z]{1,4}\d*$)/,
   countFieldPattern: /(pop|popul|total|count|cnt|num|sum|qty|households|persons|people)/i,
+  abbrevAllow: /^(GDP|GNP|CO2|USA|UK|EU|UN|NASA|NOAA|WHO|GIS|HIV|AIDS|UV|3D|2D|ID)$/i,
   serviceNamePattern: /^[A-Za-z0-9]+(_[A-Za-z0-9]+)+$/,
   checks: {
     // ---- Metadata & publishing (provisional pending checklist) ----
     "meta.title.present":   {section:"Map title & metadata", severity:"fail", provisional:true, name:"Title present and not a default", guide:"Map title should clearly indicate the subject of the map."},
     "meta.title.length":    {section:"Map title & metadata", severity:"warn", name:"Title length", guide:"Avoid overly-lengthy titles to prevent the title being cut off in the app header."},
+    "meta.title.abbrev":     {section:"Map title & metadata", severity:"warn", name:"Title avoids unexplained abbreviations", guide:"Map title should clearly indicate the subject of the map — spell out abbreviations so the subject is clear to teachers and students."},
     "meta.snippet":         {section:"Map title & metadata", severity:"fail", provisional:true, name:"Summary (snippet) present", guide:"The summary appears in galleries and search results."},
     "meta.description":     {section:"Map title & metadata", severity:"warn", provisional:true, name:"Description present and substantive", guide:"Description should explain the map, its data, and any alternate projection."},
     "meta.tags":            {section:"Map title & metadata", severity:"warn", provisional:true, name:"Tags", guide:"Tags support discovery in the MapMaker gallery."},
@@ -147,7 +149,7 @@ const RUBRIC = {
     "layer.title":          {section:"Layers", severity:"warn", name:"Layer titles are plain language", guide:"Rename layers so they read in plain English (or the language of the map) rather than service names."},
     "layer.renderer":       {section:"Layers", severity:"info", name:"Symbology set in the map", guide:"Layers using the service default symbology have not been styled for this map. (Check whether intentional.)"},
     // ---- Pop-ups ----
-    "popup.configured":     {section:"Pop-ups", severity:"warn", name:"Pop-ups configured (not default all-fields)", guide:"Configure pop-ups so they are clear, well-labelled, and only contain relevant information."},
+    "popup.configured":     {section:"Pop-ups", severity:"fail", name:"Pop-ups configured (not default all-fields)", guide:"Configure pop-ups so they are clear, well-labelled, and only contain relevant information."},
     "popup.metafields":     {section:"Pop-ups", severity:"warn", name:"Metadata fields hidden", guide:"Hide unnecessary or metadata fields (OBJECTID, GlobalID, Shape_Length, edit tracking)."},
     "popup.aliases":        {section:"Pop-ups", severity:"warn", name:"Fields renamed to plain language", guide:"Rename data fields so they read in plain language rather than abstract codes or IDs."},
     "popup.many":           {section:"Pop-ups", severity:"info", name:"Pop-up field count", guide:"Long pop-ups are hard to read on small screens — show only relevant fields."},
@@ -161,7 +163,7 @@ const RUBRIC = {
     "sym.ramp-order":       {section:"Symbology & legend", severity:"warn", name:"Class-break ramp reads sequential or diverging", guide:"Apply appropriate colour ramps: sequential for high–low data, diverging to emphasise a middle value."},
     "sym.unique-distinct":  {section:"Symbology & legend", severity:"warn", name:"Categorical classes have distinct colours", guide:"Qualitative or categorical data should use classes with different hues."},
     "sym.prop-size":        {section:"Symbology & legend", severity:"warn", name:"Proportional symbol sizes discernible", guide:"When using proportional symbols, ensure sizes are easily discernible."},
-    "legend.labels":        {section:"Symbology & legend", severity:"warn", name:"Legend labels are readable and include units", guide:"Legend items should be clearly labelled and include units for quantitative data; avoid raw field names."},
+    "legend.labels":        {section:"Symbology & legend", severity:"fail", name:"Legend labels are readable and include units", guide:"Legend items should be clearly labelled and include units for quantitative data; avoid raw field names."},
     "sym.diverging-note":   {section:"Symbology & legend", severity:"info", name:"Diverging ramp pivot explained", guide:"If a diverging scheme is used, explain the value at the divergence in the legend or description."}
   }
 };
@@ -246,6 +248,8 @@ async function audit(itemId, onProgress){
   if(title.length>T.titleMax) set(res,'meta.title.length','warn',`Title is ${title.length} characters (guideline ≤ ${T.titleMax}).`,`title length: ${title.length}`);
   else if(/\.(csv|shp|gdb|zip|xlsx)$/i.test(title)||RUBRIC.serviceNamePattern.test(title)) set(res,'meta.title.length','warn','Title looks like a filename or service name.',`title: "${title}"`);
   else note(res,'meta.title.length',`title length: ${title.length}`);
+  const abbr=[...new Set((title.match(/\b[A-ZÁÉÍÓÚÑ]{2,6}\b|\b[A-Za-z]*(?:[bcdfghjklmnpqrstvwxz]){4,}[A-Za-z]*\b/g)||[]).filter(w=>!RUBRIC.abbrevAllow.test(w)&&!/^\d+$/.test(w)))];
+  if(abbr.length) set(res,'meta.title.abbrev','warn',`Title contains abbreviation(s): ${abbr.join(', ')}. Spell out unless the description explains them.`,`title: "${title}"`); else note(res,'meta.title.abbrev',`title: "${title}"`);
   if(!(item.snippet||'').trim()) set(res,'meta.snippet','fail','No summary set.','snippet: empty'); else note(res,'meta.snippet',`snippet: ${item.snippet.length} chars`);
   const desc=stripHtml(item.description||'');
   if(desc.length<T.descriptionMin) set(res,'meta.description','warn',desc.length?`Description is short (${desc.length} chars).`:'No description.',`description: ${desc.length} chars`);
@@ -253,7 +257,7 @@ async function audit(itemId, onProgress){
   const tags=item.tags||[];
   if(tags.length<T.tagsMin) set(res,'meta.tags','warn',`${tags.length} tag(s); guideline ≥ ${T.tagsMin}.`,`tags: ${tags.join(', ')||'none'}`); else note(res,'meta.tags',`tags: ${tags.join(', ')}`);
   if(!(item.accessInformation||'').trim()) set(res,'meta.credits','fail','Credits (attribution) field is empty.','accessInformation: empty'); else note(res,'meta.credits',`credits: ${item.accessInformation}`);
-  if(!stripHtml(item.licenseInfo||'').trim()) set(res,'meta.license','warn','No terms of use set.','licenseInfo: empty'); else note(res,'meta.license','licenseInfo: set');
+  if(!stripHtml(item.licenseInfo||'').trim()) set(res,'meta.license','fail','No terms of use set.','licenseInfo: empty'); else note(res,'meta.license','licenseInfo: set');
   if(!item.thumbnail) set(res,'meta.thumbnail','warn','No custom thumbnail — the default will show in galleries.','thumbnail: none'); else note(res,'meta.thumbnail',`thumbnail: ${item.thumbnail}`);
 
   // ---- Extent & projection
@@ -314,7 +318,7 @@ async function audit(itemId, onProgress){
     const custom = l.popupInfo.title || l.popupInfo.description || (l.popupInfo.popupElements&&l.popupInfo.popupElements.length) || (l.popupInfo.mediaInfos&&l.popupInfo.mediaInfos.length) || (l.popupInfo.fieldInfos||[]).some(f=>f.visible===false);
     if(!custom && fi.length>=3) noPopup.push(`${l.title} (popup present but shows all ${fi.length} fields, no title)`);
   });
-  if(noPopup.length) set(res,'popup.configured','warn',`${noPopup.length} layer(s) show a default pop-up.`,noPopup); else note(res,'popup.configured','all feature layers have a configured pop-up or pop-ups disabled');
+  if(noPopup.length) set(res,'popup.configured','fail',`${noPopup.length} layer(s) show a default pop-up.`,noPopup); else note(res,'popup.configured','all feature layers have a configured pop-up or pop-ups disabled');
   if(metaVisible.length) set(res,'popup.metafields','warn',`Metadata fields visible in ${metaVisible.length} layer(s).`,metaVisible); else note(res,'popup.metafields','no metadata fields visible');
   if(codeAliases.length) set(res,'popup.aliases','warn',`Code-like field names shown without a plain-language label in ${codeAliases.length} layer(s).`,codeAliases); else note(res,'popup.aliases','visible fields have readable labels');
   if(manyFields.length) set(res,'popup.many','info',`Long pop-ups in ${manyFields.length} layer(s).`,manyFields); else note(res,'popup.many','pop-ups within field-count guideline');
@@ -369,7 +373,7 @@ async function audit(itemId, onProgress){
   if(rampBad.length) set(res,'sym.ramp-order','warn',`${rampBad.length} ramp(s) do not read as sequential or diverging.`,rampBad); else note(res,'sym.ramp-order','class-break ramps read sequential/diverging');
   if(uniqDup.length) set(res,'sym.unique-distinct','warn',`${uniqDup.length} categorical layer(s) with near-identical class colours.`,uniqDup); else note(res,'sym.unique-distinct','categorical classes distinct');
   if(propBad.length) set(res,'sym.prop-size','warn',`Proportional symbol size range too narrow.`,propBad); else note(res,'sym.prop-size','proportional symbol ranges OK / not used');
-  if(legendBad.length) set(res,'legend.labels','warn',`${legendBad.length} legend issue(s).`,legendBad); else note(res,'legend.labels','legend labels look readable');
+  if(legendBad.length) set(res,'legend.labels','fail',`${legendBad.length} legend issue(s).`,legendBad); else note(res,'legend.labels','legend labels look readable');
   if(divergingUsed.length) set(res,'sym.diverging-note','info',`Diverging ramp detected — confirm the pivot value is explained.`,divergingUsed); else note(res,'sym.diverging-note','no diverging ramps');
 
   return {item, data, layers, results:res, auditedAt:new Date().toISOString(), rubricVersion:RUBRIC.version};
