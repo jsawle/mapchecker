@@ -62,13 +62,13 @@ button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .check{display:grid;grid-template-columns:64px 1fr;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
 .check:last-child{border-bottom:none}
 .check .st{font-family:var(--mono);font-size:11px;font-weight:500;padding-top:3px;text-transform:uppercase}
-.check.pass .st{color:var(--pass)} .check.warn .st{color:var(--warn)} .check.fail .st{color:var(--fail)} .check.info .st{color:var(--info)} .check.error .st{color:var(--ink-3)}
+.check.skip .st{color:var(--ink-3)} .check.pass .st{color:var(--pass)} .check.warn .st{color:var(--warn)} .check.fail .st{color:var(--fail)} .check.info .st{color:var(--info)} .check.error .st{color:var(--ink-3)}
 .check .name{font-weight:500}
 .check .msg{color:var(--ink-2);font-size:14px;margin-top:2px}
 .check .ev{font-family:var(--mono);font-size:12px;color:var(--ink-3);margin-top:6px;white-space:pre-wrap;word-break:break-word}
 .check .ev span{display:block}
 .check .guide{font-size:13px;color:var(--ink-3);margin-top:6px;border-left:2px solid var(--line);padding-left:8px}
-.check.pass .guide,.check.pass .ev{display:none}
+.check.pass .guide,.check.pass .ev,.check.skip .guide{display:none}
 .showall .check.pass .guide,.showall .check.pass .ev{display:block}
 .batch{margin-top:22px}
 table.batch{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:8px;overflow:hidden;font-size:14px}
@@ -99,7 +99,7 @@ footer{max-width:1180px;margin:40px auto 0;padding:0 28px;font-size:12px;color:v
   <div id="out"></div>
 </main>
 <footer>
-  This tool automates the mechanical parts of review. Guideline checks marked <em>warn</em> are heuristics — a map may pass review with warnings, and the standards note that maps should still be reviewed by an NGS or Esri cartographer before publication. Nothing here is a substitute for that.
+  This tool automates the mechanical parts of review. Guideline checks marked <em>warn</em> are heuristics — a map may pass review with warnings, and the standards note that maps should still be reviewed by an NGS or Esri cartographer before publication. Nothing here is a substitute for that. Colour checks use CIEDE2000 (ISO/CIE 11664-6) colour difference and the Machado, Oliveira &amp; Fernandes (2009) colour-vision-deficiency simulation; thresholds are screening heuristics. Colour scheme guidance via <a href="https://colorbrewer2.org" target="_blank" rel="noopener">ColorBrewer</a> (Brewer &amp; Harrower, Penn State).
 </footer>
 
 <script>
@@ -109,7 +109,7 @@ footer{max-width:1180px;margin:40px auto 0;padding:0 28px;font-size:12px;color:v
    provisional: true = metadata requirement assumed, pending the distributor checklist
    ============================================================ */
 const RUBRIC = {
-  version: "0.2.0",
+  version: "0.3.1",
   standardsRef: "General Cartographic Standards for MapMaker",
   thresholds: {
     titleMax: 60,
@@ -120,7 +120,13 @@ const RUBRIC = {
     effectsLayersSoft: 2,
     fontsMax: 2,
     propSymbolMinRatio: 2,
-    globalScaleMinWidthDeg: 200 // initial extent wider than this = "global"
+    globalScaleMinWidthDeg: 200, // initial extent wider than this = "global"
+    deltaEMin: 12,          // ΔE2000 below this = classes too similar (normal vision)
+    deltaEMinCVD: 10,       // ΔE2000 below this under CVD simulation = not distinguishable
+    pointSymbolMinPx: 6,
+    lineMinPx: 1,
+    labelFontMinPt: 10,
+    opacityMin: 0.3
   },
   metadataFieldPattern: /^(objectid|fid|globalid|shape(_|\.)?(length|area|leng|len|starea|stlength)?|shape__?(length|area)|created_(user|date)|last_edited_(user|date)|editdate|creator|editor)$/i,
   codeLikeFieldPattern: /(^[A-Z0-9_]{2,}$)|(_)|(^[a-z]{1,4}\d*$)/,
@@ -158,10 +164,17 @@ const RUBRIC = {
     "effects.recolour":     {section:"Visual effects & labels", severity:"warn", name:"No colour-altering effects", guide:"Beware effects that alter the colour of thematic data and are not reflected in the legend."},
     "fonts.max":            {section:"Visual effects & labels", severity:"warn", name:"At most two fonts", guide:"Use at most two fonts, preferably one sans-serif font."},
     "labels.halo":          {section:"Visual effects & labels", severity:"info", name:"Label halos", guide:"Type should be legible across various backgrounds — use subtle halos for contrast as necessary."},
+    // ---- Accessibility ----
+    "a11y.cvd":             {section:"Accessibility", severity:"warn", name:"Colours distinguishable with colour-vision deficiency", guide:"Consider visual accessibility — ensure colour palettes are colour-blind friendly. Screened with Machado et al. (2009) CVD simulation and CIEDE2000 — a heuristic, not a certification.", link:"https://colorbrewer2.org", linkText:"ColorBrewer: filter to colourblind-safe schemes"},
+    "a11y.contrast":        {section:"Accessibility", severity:"warn", name:"Adjacent classes have sufficient colour contrast", guide:"Colour palettes should have sufficient visual contrast while maintaining balance and harmony.", link:"https://colorbrewer2.org", linkText:"ColorBrewer"},
+    "a11y.symbol-size":     {section:"Accessibility", severity:"warn", name:"Symbols large enough on small screens", guide:"Users may be on small laptops, tablets, or phones — tiny points and hairline outlines disappear."},
+    "a11y.label-size":      {section:"Accessibility", severity:"warn", name:"Label text large enough", guide:"Ensure proper label sizing and hierarchy, especially across zoom levels."},
+    "a11y.opacity":         {section:"Accessibility", severity:"info", name:"Very transparent layers", guide:"Adjust value and transparency for hierarchy, but data at very low opacity can be unreadable against a basemap."},
+    "a11y.colour-only":     {section:"Accessibility", severity:"info", name:"Many categories distinguished by colour alone", guide:"Beyond ~8 categorical classes, hue alone stops being distinguishable for many readers — consider grouping or symbol shape."},
     // ---- Symbology & legend ----
     "sym.count-choropleth": {section:"Symbology & legend", severity:"warn", name:"Counts not mapped as choropleth", guide:"Count data should not be symbolised as choropleth — normalise to rates or percentages first."},
-    "sym.ramp-order":       {section:"Symbology & legend", severity:"warn", name:"Class-break ramp reads sequential or diverging", guide:"Apply appropriate colour ramps: sequential for high–low data, diverging to emphasise a middle value."},
-    "sym.unique-distinct":  {section:"Symbology & legend", severity:"warn", name:"Categorical classes have distinct colours", guide:"Qualitative or categorical data should use classes with different hues."},
+    "sym.ramp-order":       {section:"Symbology & legend", severity:"warn", name:"Class-break ramp reads sequential or diverging", guide:"Apply appropriate colour ramps: sequential for high–low data, diverging to emphasise a middle value.", link:"https://colorbrewer2.org", linkText:"ColorBrewer: choose a sequential or diverging scheme"},
+    "sym.unique-distinct":  {section:"Symbology & legend", severity:"warn", name:"Categorical classes have distinct colours", guide:"Qualitative or categorical data should use classes with different hues.", link:"https://colorbrewer2.org/#type=qualitative", linkText:"ColorBrewer: qualitative schemes"},
     "sym.prop-size":        {section:"Symbology & legend", severity:"warn", name:"Proportional symbol sizes discernible", guide:"When using proportional symbols, ensure sizes are easily discernible."},
     "legend.labels":        {section:"Symbology & legend", severity:"fail", name:"Legend labels are readable and include units", guide:"Legend items should be clearly labelled and include units for quantitative data; avoid raw field names."},
     "sym.diverging-note":   {section:"Symbology & legend", severity:"info", name:"Diverging ramp pivot explained", guide:"If a diverging scheme is used, explain the value at the divergence in the legend or description."}
@@ -224,6 +237,49 @@ function rgbOf(sym){
   return null;
 }
 function colourDist(a,b){ return Math.sqrt(a.reduce((s,v,i)=>s+(v-b[i])**2,0)); }
+// sRGB -> linear -> XYZ -> CIELAB
+function srgb2lin(c){ c/=255; return c<=.04045? c/12.92 : Math.pow((c+.055)/1.055,2.4); }
+function lin2srgb(v){ v=Math.max(0,Math.min(1,v)); return 255*(v<=.0031308? 12.92*v : 1.055*Math.pow(v,1/2.4)-.055); }
+function rgb2lab([r,g,b]){
+  const R=srgb2lin(r),G=srgb2lin(g),B=srgb2lin(b);
+  let X=(R*.4124564+G*.3575761+B*.1804375)/.95047, Y=(R*.2126729+G*.7151522+B*.0721750), Z=(R*.0193339+G*.1191920+B*.9503041)/1.08883;
+  const f=t=>t>.008856? Math.cbrt(t) : (7.787*t+16/116);
+  X=f(X);Y=f(Y);Z=f(Z);
+  return [116*Y-16, 500*(X-Y), 200*(Y-Z)];
+}
+function deltaE2000(lab1,lab2){
+  const [L1,a1,b1]=lab1,[L2,a2,b2]=lab2; const rad=Math.PI/180, deg=180/Math.PI;
+  const C1=Math.hypot(a1,b1),C2=Math.hypot(a2,b2),Cb=(C1+C2)/2;
+  const G=.5*(1-Math.sqrt(Math.pow(Cb,7)/(Math.pow(Cb,7)+Math.pow(25,7))));
+  const a1p=a1*(1+G),a2p=a2*(1+G); const C1p=Math.hypot(a1p,b1),C2p=Math.hypot(a2p,b2);
+  const h=(a,b)=>{ let v=Math.atan2(b,a)*deg; return v<0?v+360:v; };
+  const h1p=C1p? h(a1p,b1):0, h2p=C2p? h(a2p,b2):0;
+  const dLp=L2-L1, dCp=C2p-C1p; let dhp=0;
+  if(C1p*C2p){ dhp=h2p-h1p; if(dhp>180) dhp-=360; else if(dhp<-180) dhp+=360; }
+  const dHp=2*Math.sqrt(C1p*C2p)*Math.sin(dhp/2*rad);
+  const Lbp=(L1+L2)/2, Cbp=(C1p+C2p)/2; let hbp=h1p+h2p;
+  if(C1p*C2p){ if(Math.abs(h1p-h2p)>180) hbp+= (hbp<360? 360 : -360); hbp/=2; }
+  const T=1-.17*Math.cos((hbp-30)*rad)+.24*Math.cos(2*hbp*rad)+.32*Math.cos((3*hbp+6)*rad)-.20*Math.cos((4*hbp-63)*rad);
+  const SL=1+.015*Math.pow(Lbp-50,2)/Math.sqrt(20+Math.pow(Lbp-50,2)), SC=1+.045*Cbp, SH=1+.015*Cbp*T;
+  const dTheta=30*Math.exp(-Math.pow((hbp-275)/25,2)); const RC=2*Math.sqrt(Math.pow(Cbp,7)/(Math.pow(Cbp,7)+Math.pow(25,7))); const RT=-Math.sin(2*dTheta*rad)*RC;
+  return Math.sqrt(Math.pow(dLp/SL,2)+Math.pow(dCp/SC,2)+Math.pow(dHp/SH,2)+RT*(dCp/SC)*(dHp/SH));
+}
+// Machado, Oliveira & Fernandes (2009) full-severity simulation matrices, applied in linear RGB
+const CVD_MATRICES={
+  protanopia:  [[0.152286,1.052583,-0.204868],[0.114503,0.786281,0.099216],[-0.003882,-0.048116,1.051998]],
+  deuteranopia:[[0.367322,0.860646,-0.227968],[0.280085,0.672501,0.047413],[-0.011820,0.042940,0.968881]],
+  tritanopia:  [[1.255528,-0.076749,-0.178779],[-0.078411,0.930809,0.147602],[0.004733,0.691367,0.303900]]
+};
+function simulateCVD(rgb,type){
+  const m=CVD_MATRICES[type]; const lin=rgb.map(srgb2lin);
+  return m.map(row=>lin2srgb(row[0]*lin[0]+row[1]*lin[1]+row[2]*lin[2]));
+}
+function minPairDeltaE(cols,adjacentOnly){
+  const labs=cols.map(rgb2lab); let min=Infinity, pair=null;
+  for(let i=0;i<labs.length;i++){ for(let j=i+1;j<labs.length;j++){ if(adjacentOnly && j!==i+1) continue; const d=deltaE2000(labs[i],labs[j]); if(d<min){min=d;pair=[i+1,j+1];} } }
+  return {min,pair};
+}
+function rgbHex(c){ return '#'+c.map(v=>Math.round(v).toString(16).padStart(2,'0')).join(''); }
 
 /* ============================================================
    Checks
@@ -319,9 +375,13 @@ async function audit(itemId, onProgress){
     if(!custom && fi.length>=3) noPopup.push(`${l.title} (popup present but shows all ${fi.length} fields, no title)`);
   });
   if(noPopup.length) set(res,'popup.configured','fail',`${noPopup.length} layer(s) show a default pop-up.`,noPopup); else note(res,'popup.configured','all feature layers have a configured pop-up or pop-ups disabled');
+  const anyPopupCfg = layers.some(l=>l.kind==='feature' && l.popupInfo && !l.disablePopup);
+  if(!anyPopupCfg){ set(res,'popup.metafields','skip','Not assessed — no pop-up configuration to check.'); set(res,'popup.aliases','skip','Not assessed — no pop-up configuration to check.'); set(res,'popup.many','skip','Not assessed — no pop-up configuration to check.'); }
+  else {
   if(metaVisible.length) set(res,'popup.metafields','warn',`Metadata fields visible in ${metaVisible.length} layer(s).`,metaVisible); else note(res,'popup.metafields','no metadata fields visible');
   if(codeAliases.length) set(res,'popup.aliases','warn',`Code-like field names shown without a plain-language label in ${codeAliases.length} layer(s).`,codeAliases); else note(res,'popup.aliases','visible fields have readable labels');
   if(manyFields.length) set(res,'popup.many','info',`Long pop-ups in ${manyFields.length} layer(s).`,manyFields); else note(res,'popup.many','pop-ups within field-count guideline');
+  }
 
   // ---- Effects, fonts, labels
   const withEffects = layers.filter(l=>l.effect || (l.blendMode && l.blendMode!=='normal'));
@@ -336,14 +396,24 @@ async function audit(itemId, onProgress){
   if(noHalo.length) set(res,'labels.halo','info',`${noHalo.length} label class(es) without a halo.`,noHalo); else note(res,'labels.halo','all label classes have halos');
 
   // ---- Symbology & legend
-  const cntChoro=[], rampBad=[], uniqDup=[], propBad=[], legendBad=[], divergingUsed=[];
+  const cntChoro=[], rampBad=[], uniqDup=[], propBad=[], legendBad=[], divergingUsed=[], colourOnly=[], a11yColours=[], smallSym=[], smallLabel=[], lowOpacity=[];
   layers.forEach(l=>{
+    if(typeof l.opacity==='number' && l.opacity<T.opacityMin) lowOpacity.push(`${l.title}: opacity ${l.opacity}`);
+    (l.labelingInfo||[]).forEach(li=>{ const s=li.symbol||{}; const sz=(s.font&&s.font.size)||(s.symbolLayers&&s.symbolLayers[0]&&s.symbolLayers[0].size); if(sz && sz<T.labelFontMinPt) smallLabel.push(`${l.title}: ${sz}pt`); });
     const r=l.renderer; if(!r) return;
     const geom=(l.geometryType||'').toLowerCase();
+    const syms=[r.symbol, ...(r.classBreakInfos||[]).map(c=>c.symbol), ...(r.uniqueValueInfos||[]).map(c=>c.symbol)].filter(Boolean);
+    syms.forEach(sy=>{
+      if(sy.type==='esriSMS' && sy.size && sy.size<T.pointSymbolMinPx && !(r.visualVariables||[]).some(v=>v.type==='sizeInfo')) smallSym.push(`${l.title}: point ${sy.size}px`);
+      if(sy.type==='esriSLS' && typeof sy.width==='number' && sy.width<T.lineMinPx) smallSym.push(`${l.title}: line ${sy.width}px`);
+    });
+    const rgbAlpha = sy=>sy && sy.color && sy.color[3]!==undefined ? sy.color[3]/255 : 1;
+    if(syms.length && syms.every(sy=>rgbAlpha(sy)<T.opacityMin)) lowOpacity.push(`${l.title}: symbol fill alpha < ${T.opacityMin}`);
     if(r.type==='classBreaks'){
       const field=r.field||'';
       if(/polygon/.test(geom) && !r.normalizationType && !r.normalizationField && RUBRIC.countFieldPattern.test(field) && !/(pct|percent|rate|per_?\d|density|ratio|index|share|mean|avg|median)/i.test(field)) cntChoro.push(`${l.title}: field "${field}" with no normalisation`);
       const cols=(r.classBreakInfos||[]).map(ci=>rgbOf(ci.symbol)).filter(Boolean);
+      if(cols.length>=2) a11yColours.push({title:l.title, cols, adjacentOnly:true});
       if(cols.length>=3){
         const L=cols.map(lum); const d=L.slice(1).map((v,i)=>v-L[i]);
         const mono = d.every(x=>x>=-.005)||d.every(x=>x<=.005);
@@ -359,8 +429,9 @@ async function audit(itemId, onProgress){
     }
     if(r.type==='uniqueValue'){
       const cols=(r.uniqueValueInfos||[]).map(ci=>rgbOf(ci.symbol)).filter(Boolean);
-      const dup=[]; for(let i=0;i<cols.length;i++) for(let j=i+1;j<cols.length;j++) if(colourDist(cols[i],cols[j])<25) dup.push(`${i+1}~${j+1}`);
-      if(dup.length) uniqDup.push(`${l.title}: ${dup.length} near-identical colour pair(s) among ${cols.length} classes`);
+      if(cols.length>=2){ const {min,pair}=minPairDeltaE(cols,false); if(min<T.deltaEMin) uniqDup.push(`${l.title}: classes ${pair[0]} and ${pair[1]} ΔE ${min.toFixed(1)} (${rgbHex(cols[pair[0]-1])} vs ${rgbHex(cols[pair[1]-1])})`); }
+      if(cols.length>8) colourOnly.push(`${l.title}: ${cols.length} categories`);
+      a11yColours.push({title:l.title, cols, adjacentOnly:false});
       const f=[r.field1,r.field2,r.field3].filter(Boolean).join(',');
       if(RUBRIC.codeLikeFieldPattern.test(f) && !(r.legendOptions&&r.legendOptions.title)) legendBad.push(`${l.title}: legend headed by raw field "${f}"`);
     }
@@ -369,6 +440,18 @@ async function audit(itemId, onProgress){
       if(vv.type==='colorInfo' && vv.stops && vv.stops.length>=3){ const L=vv.stops.map(s=>lum(s.color.slice(0,3))); const d=L.slice(1).map((v,i)=>v-L[i]); let turns=0; for(let i=1;i<d.length;i++) if(Math.sign(d[i])!==Math.sign(d[i-1])&&Math.abs(d[i])>.01&&Math.abs(d[i-1])>.01) turns++; if(turns>1) rampBad.push(`${l.title}: continuous colour stops not sequential/diverging`); if(turns===1) divergingUsed.push(`${l.title}: continuous ramp on "${vv.field}"`); }
     });
   });
+  // ---- Accessibility results
+  const cvdBad=[], contrastBad=[];
+  a11yColours.forEach(({title,cols,adjacentOnly})=>{
+    const n=minPairDeltaE(cols,adjacentOnly); if(n.min<T.deltaEMin) contrastBad.push(`${title}: classes ${n.pair[0]}/${n.pair[1]} ΔE ${n.min.toFixed(1)} (normal vision)`);
+    for(const type in CVD_MATRICES){ const sim=cols.map(c=>simulateCVD(c,type)); const m=minPairDeltaE(sim,adjacentOnly); if(m.min<T.deltaEMinCVD) cvdBad.push(`${title}: ${type} — classes ${m.pair[0]}/${m.pair[1]} ΔE ${m.min.toFixed(1)} (${rgbHex(cols[m.pair[0]-1])} vs ${rgbHex(cols[m.pair[1]-1])})`); }
+  });
+  if(cvdBad.length) set(res,'a11y.cvd','warn',`${new Set(cvdBad.map(x=>x.split(':')[0])).size} layer(s) have classes that merge under colour-vision deficiency.`,cvdBad); else note(res,'a11y.cvd',a11yColours.length?`${a11yColours.length} renderer(s) checked under protan/deutan/tritan simulation (min ΔE ≥ ${T.deltaEMinCVD})`:'no class colours to test');
+  if(contrastBad.length) set(res,'a11y.contrast','warn',`${contrastBad.length} renderer(s) with low contrast between classes.`,contrastBad); else note(res,'a11y.contrast',a11yColours.length?`all adjacent classes ΔE ≥ ${T.deltaEMin}`:'no class colours to test');
+  if(smallSym.length) set(res,'a11y.symbol-size','warn',`${new Set(smallSym).size} small symbol size(s).`,[...new Set(smallSym)]); else note(res,'a11y.symbol-size','symbol sizes OK');
+  if(smallLabel.length) set(res,'a11y.label-size','warn',`${smallLabel.length} label class(es) below ${T.labelFontMinPt}pt.`,smallLabel); else note(res,'a11y.label-size','label sizes OK / no labels');
+  if(lowOpacity.length) set(res,'a11y.opacity','info',`${lowOpacity.length} layer(s) very transparent.`,lowOpacity); else note(res,'a11y.opacity','opacities OK');
+  if(colourOnly.length) set(res,'a11y.colour-only','info',`Large categorical palettes rely on hue alone.`,colourOnly); else note(res,'a11y.colour-only','categorical class counts OK');
   if(cntChoro.length) set(res,'sym.count-choropleth','warn',`${cntChoro.length} choropleth layer(s) appear to map raw counts.`,cntChoro); else note(res,'sym.count-choropleth','no unnormalised count choropleths detected');
   if(rampBad.length) set(res,'sym.ramp-order','warn',`${rampBad.length} ramp(s) do not read as sequential or diverging.`,rampBad); else note(res,'sym.ramp-order','class-break ramps read sequential/diverging');
   if(uniqDup.length) set(res,'sym.unique-distinct','warn',`${uniqDup.length} categorical layer(s) with near-identical class colours.`,uniqDup); else note(res,'sym.unique-distinct','categorical classes distinct');
@@ -396,21 +479,21 @@ function round(n){ return Number(n).toFixed(0); }
    Rendering
    ============================================================ */
 const $=id=>document.getElementById(id);
-function tally(res){ const t={fail:0,warn:0,info:0,pass:0}; for(const id in res) t[res[id].status]++; return t; }
+function tally(res){ const t={fail:0,warn:0,info:0,pass:0,skip:0}; for(const id in res) t[res[id].status]++; return t; }
 function verdict(t){ return t.fail?'blocked': t.warn?'review':'ready'; }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function renderReport(a){
   const {item, results}=a; const t=tally(results); const v=verdict(t);
   const thumb = item.thumbnail? `${PORTAL}/content/items/${item.id}/info/${item.thumbnail}` : '';
   const sections={}; for(const id in RUBRIC.checks){ const s=RUBRIC.checks[id].section; (sections[s]=sections[s]||[]).push(id); }
-  const order={fail:0,warn:1,info:2,pass:3,error:4};
+  const order={fail:0,warn:1,info:2,skip:3,pass:4,error:5};
   let right='';
   for(const s in sections){
     const ids=sections[s].slice().sort((x,y)=>order[results[x].status]-order[results[y].status]);
-    const nonpass=ids.filter(i=>results[i].status!=='pass').length;
+    const nonpass=ids.filter(i=>results[i].status!=='pass'&&results[i].status!=='skip').length;
     right+=`<div class="card section"><h3><span>${esc(s)}</span><span class="count">${nonpass?nonpass+' to look at':'all pass'}</span></h3>`;
     for(const id of ids){ const c=RUBRIC.checks[id], r=results[id];
-      right+=`<div class="check ${r.status}"><div class="st">${r.status}</div><div><div class="name">${esc(c.name)}${c.provisional?'<span class="prov" title="Assumed publishing requirement — confirm against distributor checklist">provisional</span>':''}</div>${r.msg?`<div class="msg">${esc(r.msg)}</div>`:''}${r.evidence.length?`<div class="ev">${r.evidence.filter(Boolean).map(e=>`<span>${esc(e)}</span>`).join('')}</div>`:''}<div class="guide">${esc(c.guide)}</div></div></div>`;
+      right+=`<div class="check ${r.status}"><div class="st">${r.status}</div><div><div class="name">${esc(c.name)}${c.provisional?'<span class="prov" title="Assumed publishing requirement — confirm against distributor checklist">provisional</span>':''}</div>${r.msg?`<div class="msg">${esc(r.msg)}</div>`:''}${r.evidence.length?`<div class="ev">${r.evidence.filter(Boolean).map(e=>`<span>${esc(e)}</span>`).join('')}</div>`:''}<div class="guide">${esc(c.guide)}${c.link?` <a href="${c.link}" target="_blank" rel="noopener">${esc(c.linkText||c.link)}</a>`:''}</div></div></div>`;
     }
     right+='</div>';
   }
