@@ -1,0 +1,656 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Web Map Scorecard</title>
+<style>
+  :root{
+    --bg:#f6f8fa; --card:#ffffff; --line:#d0d7de; --ink:#1f2328; --muted:#57606a;
+    --blue:#0969da; --pass:#1a7f37; --warn:#9a6700; --fail:#b42318; --na:#57606a;
+    --passbg:#e6f4ea; --warnbg:#fff8e1; --failbg:#fde8e6; --nabg:#eef1f4;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Segoe UI',system-ui,-apple-system,Arial,sans-serif;
+    background:var(--bg);color:var(--ink);font-size:15px;line-height:1.45}
+  .wrap{max-width:1080px;margin:0 auto;padding:18px}
+  header.app{display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+  header.app h1{font-size:20px;margin:0}
+  header.app .tag{font-size:11px;background:#eef1f4;color:var(--muted);
+    padding:3px 8px;border-radius:20px;font-weight:600}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:18px 20px;margin-bottom:16px}
+  .row{display:flex;gap:14px;flex-wrap:wrap}
+  .col{flex:1 1 320px}
+  label{font-weight:600;font-size:13px;display:block;margin-bottom:6px}
+  .hint{color:var(--muted);font-size:12px;margin:2px 0 8px}
+  textarea,input[type=text]{width:100%;border:1px solid var(--line);border-radius:9px;
+    padding:10px 12px;font-size:14px;font-family:inherit;background:#fff}
+  textarea{min-height:96px;resize:vertical}
+  .tabs{display:flex;gap:6px;margin-bottom:12px}
+  .tabs button{border:1px solid var(--line);background:#fff;border-radius:9px;
+    padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;color:var(--muted)}
+  .tabs button.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+  .pane{display:none}.pane.active{display:block}
+  .actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}
+  button.primary{background:var(--blue);color:#fff;border:0;border-radius:9px;
+    padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer}
+  button.primary:disabled{opacity:.55;cursor:not-allowed}
+  button.ghost{background:#fff;border:1px solid var(--line);border-radius:9px;
+    padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;color:var(--ink)}
+  button.ghost:disabled{opacity:.5;cursor:not-allowed}
+  .progress{height:6px;background:#eaeef2;border-radius:6px;overflow:hidden;margin-top:12px;display:none}
+  .progress .fill{height:100%;width:0;background:var(--blue);transition:width .2s}
+  .status{font-size:13px;color:var(--muted);margin-top:8px;min-height:18px}
+  .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
+    background:#1f2328;color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;
+    opacity:0;pointer-events:none;transition:opacity .2s;z-index:50}
+  .toast.show{opacity:1}
+  /* summary strip */
+  .summary{display:none;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+  .stat{flex:1 1 120px;background:var(--card);border:1px solid var(--line);
+    border-radius:12px;padding:12px 14px;text-align:center}
+  .stat .n{font-size:24px;font-weight:700}
+  .stat .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  /* table */
+  .tablewrap{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid #eef1f4;vertical-align:middle}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);
+    cursor:pointer;user-select:none;white-space:nowrap;background:#fbfcfd;position:sticky;top:0}
+  th.sorted::after{content:" \25BC";font-size:9px}
+  th.sorted.asc::after{content:" \25B2"}
+  tr.maprow{cursor:pointer}
+  tr.maprow:hover{background:#f6f8fa}
+  .grade{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;
+    border-radius:50%;color:#fff;font-weight:700;font-size:13px}
+  .mini{width:90px;height:7px;background:#eaeef2;border-radius:6px;overflow:hidden;display:inline-block;vertical-align:middle}
+  .mini .f{height:100%}
+  .titlecell{max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .detail{background:#fbfcfd}
+  .detail td{padding:0}
+  .detail .inner{padding:14px 18px}
+  .catblock{margin-bottom:12px}
+  .catblock h4{margin:0 0 6px;font-size:13px;display:flex;justify-content:space-between;align-items:center}
+  .catblock .wt{font-weight:500;color:#8b949e;font-size:11px}
+  ul.checks{list-style:none;margin:6px 0 0;padding:0}
+  ul.checks li{padding:4px 0;font-size:13px;display:flex;gap:8px;align-items:flex-start}
+  .badge{font-size:9px;font-weight:700;letter-spacing:.04em;padding:2px 6px;border-radius:20px;flex:0 0 auto;margin-top:1px}
+  .b-pass{color:var(--pass);background:var(--passbg)} .b-warn{color:var(--warn);background:var(--warnbg)}
+  .b-fail{color:var(--fail);background:var(--failbg)} .b-na{color:var(--na);background:var(--nabg)}
+  .err{background:var(--failbg);color:var(--fail);border:1px solid #f5c2c0;
+    padding:9px 12px;border-radius:9px;font-size:13px;margin-top:8px}
+  a{color:var(--blue)}
+  footer{color:#8b949e;font-size:11.5px;text-align:center;padding:12px 0 24px}
+  .example{font-size:12px;color:var(--muted);margin-top:6px}
+  .example a{cursor:pointer}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="app">
+    <h1>Web Map Scorecard</h1>
+    <span class="tag">cartography &middot; attributes &middot; titles &middot; metadata</span>
+  </header>
+
+  <!-- INPUT -->
+  <div class="card">
+    <div class="tabs">
+      <button id="tab-list" class="active" onclick="switchTab('list')">Paste maps</button>
+      <button id="tab-group" onclick="switchTab('group')">Score a group</button>
+    </div>
+
+    <div id="pane-list" class="pane active">
+      <label for="ids">Web map URLs or item IDs</label>
+      <div class="hint">One per line. Accepts item pages, Map Viewer links, or raw 32-character IDs. Public maps only.</div>
+      <textarea id="ids" placeholder="https://www.arcgis.com/home/item.html?id=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx&#10;https://www.arcgis.com/apps/mapviewer/index.html?webmap=yyyy...&#10;zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"></textarea>
+    </div>
+
+    <div id="pane-group" class="pane">
+      <div class="row">
+        <div class="col">
+          <label for="group">ArcGIS group ID or group URL</label>
+          <div class="hint">Scores every Web Map shared to the group. Great for reviewing a curated content group.</div>
+          <input type="text" id="group" placeholder="36443e9570294a1f883b5d2c5abfe6b5">
+          <div class="example">Try the public MapMaker maps &amp; layers group:
+            <a onclick="document.getElementById('group').value='36443e9570294a1f883b5d2c5abfe6b5'">use example group</a></div>
+        </div>
+        <div class="col" style="flex:0 1 220px">
+          <label for="max">Max maps</label>
+          <div class="hint">Safety cap for big groups.</div>
+          <input type="text" id="max" value="50">
+        </div>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:12px">
+      <div class="col">
+        <label for="portal">Portal (advanced)</label>
+        <div class="hint">Leave as default for ArcGIS Online. Change only for ArcGIS Enterprise.</div>
+        <input type="text" id="portal" value="https://www.arcgis.com">
+      </div>
+    </div>
+
+    <div class="actions">
+      <button id="run" class="primary" onclick="run()">Score maps</button>
+      <button id="csv" class="ghost" onclick="downloadCSV()" disabled>Download CSV</button>
+      <button id="link" class="ghost" onclick="copyShareLink()">Copy shareable link</button>
+      <button id="clear" class="ghost" onclick="clearAll()">Clear</button>
+    </div>
+    <div class="progress" id="progress"><div class="fill" id="progressFill"></div></div>
+    <div class="status" id="status"></div>
+    <div id="inputErr"></div>
+  </div>
+
+  <!-- RESULTS -->
+  <div class="summary" id="summary"></div>
+  <div class="card" id="resultsCard" style="display:none">
+    <div class="tablewrap">
+      <table id="results">
+        <thead><tr>
+          <th data-k="title" onclick="sortBy('title')">Map</th>
+          <th data-k="overall" onclick="sortBy('overall')" class="sorted">Score</th>
+          <th data-k="grade" onclick="sortBy('grade')">Grade</th>
+          <th data-k="title_s" onclick="sortBy('title_s')">Title</th>
+          <th data-k="metadata_s" onclick="sortBy('metadata_s')">Metadata</th>
+          <th data-k="popups_s" onclick="sortBy('popups_s')">Pop-ups</th>
+          <th data-k="layers_s" onclick="sortBy('layers_s')">Layers</th>
+          <th data-k="symbology_s" onclick="sortBy('symbology_s')">Symbology</th>
+        </tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <footer>
+    Client-side scorecard &middot; rubric from "General Cartographic Standards for MapMaker".
+    Colour &amp; symbology items marked MANUAL still need a cartographer's eye.
+    Reads public items via the ArcGIS Sharing REST API &mdash; no data leaves the browser.
+  </footer>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   Web Map Scorecard - client-side engine
+   ============================================================ */
+const WEB_MERCATOR = new Set([102100, 3857, 102113]);
+const ITEM_ID_RE = /^[0-9a-fA-F]{32}$/;
+const SYSTEM_FIELDS = new Set(["objectid","fid","globalid","shape","shape_length",
+  "shape_area","shape__length","shape__area","created_user","created_date",
+  "last_edited_user","last_edited_date"]);
+const GENERIC_TITLES = new Set(["my map","untitled","new map","map","webmap","web map"]);
+const STATUS_PTS = {pass:1, warn:0.5, fail:0, na:null};
+
+const RUBRIC = [
+  ["title","Title",15],
+  ["metadata","Metadata & item info",25],
+  ["popups","Pop-ups & attributes",25],
+  ["layers","Layers & structure",15],
+  ["basemap","Basemap",5],
+  ["extent","Extent & projection",5],
+  ["symbology","Symbology & colour",10],
+];
+const CFG = {title_max_len:60, min_tags:3, max_operational_layers:10};
+
+/* ---------- URL / ID handling ---------- */
+function parseItemId(ref){
+  ref = ref.trim();
+  if(ITEM_ID_RE.test(ref)) return ref;
+  let m = ref.match(/[?&](?:id|webmap|appid)=([0-9a-fA-F]{32})/);
+  if(m) return m[1];
+  m = ref.match(/items\/([0-9a-fA-F]{32})/);
+  if(m) return m[1];
+  m = ref.match(/([0-9a-fA-F]{32})/);
+  if(m) return m[1];
+  return null;
+}
+
+async function fetchJSON(url){
+  const r = await fetch(url, {credentials:"omit"});
+  if(!r.ok) throw new Error("HTTP "+r.status);
+  return r.json();
+}
+function portalBase(){ return (document.getElementById("portal").value || "https://www.arcgis.com").replace(/\/+$/,""); }
+
+async function fetchItem(id){
+  const base = portalBase()+"/sharing/rest/content/items/"+id;
+  const item = await fetchJSON(base+"?f=json");
+  if(item.error) throw new Error(item.error.message || "Item not accessible (is it public?)");
+  const data = await fetchJSON(base+"/data?f=json");
+  return {item, data:(data && !data.error)?data:{}};
+}
+
+async function fetchGroupWebmaps(groupId, maxN){
+  const base = portalBase()+"/sharing/rest/content/groups/"+groupId+"/search";
+  let ids=[], start=1;
+  while(ids.length < maxN){
+    const num = Math.min(100, maxN - ids.length);
+    const url = base+'?f=json&num='+num+'&start='+start+'&q='+encodeURIComponent('type:"Web Map"');
+    const res = await fetchJSON(url);
+    if(res.error) throw new Error(res.error.message || "Group not accessible");
+    (res.results||[]).forEach(it=>{ if(it.type==="Web Map") ids.push(it.id); });
+    if(!res.nextStart || res.nextStart<=0) break;
+    start = res.nextStart;
+  }
+  return ids.slice(0, maxN);
+}
+
+/* ---------- helpers ---------- */
+const chk = (status,message)=>({status,message});
+function opLayers(data){
+  const out=[]; (data.operationalLayers||[]).forEach(l=>{ out.push(l);
+    (l.layers||[]).forEach(s=>out.push(s)); }); return out;
+}
+function stripHtml(s){ return (s||"").replace(/<[^>]+>/g,""); }
+
+/* ---------- category scorers ---------- */
+function scoreTitle(item){
+  const c=[], t=(item.title||"").trim(), max=CFG.title_max_len;
+  if(!t){ c.push(chk("fail","Item has no title.")); return c; }
+  c.push(chk("pass","Title is present: '"+t+"'."));
+  c.push(GENERIC_TITLES.has(t.toLowerCase())
+    ? chk("fail","Title looks like a default/placeholder ('"+t+"').")
+    : chk("pass","Title is not a generic placeholder."));
+  c.push(t.length>max
+    ? chk("warn","Title is "+t.length+" characters (> "+max+"); may be cut off on small screens.")
+    : chk("pass","Title length is "+t.length+" characters (<= "+max+")."));
+  return c;
+}
+function scoreMetadata(item,data){
+  const c=[], snip=(item.snippet||"").trim(), desc=stripHtml(item.description).trim();
+  const tags=(item.tags||[]).filter(x=>x.trim());
+  const credits=(item.accessInformation||"").trim(), terms=(item.licenseInfo||"").trim();
+  c.push(chk(snip.length>=30?"pass":(snip?"warn":"fail"),"Summary/snippet: "+(snip?snip.length+" chars":"missing")+"."));
+  c.push(chk(desc.length>=100?"pass":(desc?"warn":"fail"),"Description: "+(desc?desc.length+" chars":"missing")+"."));
+  c.push(chk(tags.length>=CFG.min_tags?"pass":(tags.length?"warn":"fail"),"Tags: "+tags.length+" found (target >= "+CFG.min_tags+")."));
+  c.push(chk(credits?"pass":"warn","Credits/attribution: "+(credits?"present":"missing")+"."));
+  c.push(chk(terms?"pass":"warn","Terms of use / licence: "+(terms?"present":"missing")+"."));
+  c.push(chk(item.thumbnail?"pass":"warn","Thumbnail: "+(item.thumbnail?"present":"missing")+"."));
+  const sr=data.spatialReference||{}, wkid=sr.latestWkid||sr.wkid;
+  if(wkid && !WEB_MERCATOR.has(wkid)){
+    const men=/projection|coordinate|wkid|epsg/i.test(desc);
+    c.push(chk(men?"pass":"warn","Non-Web-Mercator projection (wkid "+wkid+") "+(men?"is":"is NOT")+" explained in the description."));
+  }
+  return c;
+}
+function scorePopups(item,data){
+  const c=[], layers=opLayers(data);
+  if(!layers.length) return [chk("na","No operational layers found to evaluate pop-ups.")];
+  let configured=0, considered=0;
+  layers.forEach(l=>{
+    const name=l.title||l.id||"layer", type=l.layerType||"";
+    if(["ArcGISTiledMapServiceLayer","VectorTileLayer","ArcGISImageServiceLayer"].includes(type)) return;
+    considered++;
+    const p=l.popupInfo;
+    if(!p){ c.push(chk("warn","Layer '"+name+"' has no pop-up configured.")); return; }
+    configured++;
+    if(!((p.title||"").trim())) c.push(chk("warn","Layer '"+name+"' pop-up has no title."));
+    const raw=[];
+    (p.fieldInfos||[]).forEach(fi=>{
+      if(!fi.visible) return;
+      const fn=(fi.fieldName||""), al=(fi.label||"").trim();
+      if(SYSTEM_FIELDS.has(fn.toLowerCase())) raw.push(fn);
+      else if(!al && (fn.includes("_")||fn===fn.toUpperCase())) raw.push(fn);
+    });
+    c.push(raw.length
+      ? chk("warn","Layer '"+name+"' pop-up exposes raw/system fields: "+raw.slice(0,5).join(", ")+".")
+      : chk("pass","Layer '"+name+"' pop-up fields look clean."));
+  });
+  if(considered){
+    const r=configured/considered;
+    c.unshift(chk(r>=0.75?"pass":(r>0?"warn":"fail"),configured+" of "+considered+" data layers have pop-ups configured."));
+  }
+  return c;
+}
+function scoreLayers(item,data){
+  const c=[], layers=opLayers(data), n=layers.length;
+  if(!n) return [chk("fail","Web map has no operational layers.")];
+  c.push(chk(n<=CFG.max_operational_layers?"pass":"warn",n+" operational layers (soft limit "+CFG.max_operational_layers+" for overcrowding)."));
+  const bad=[];
+  layers.forEach(l=>{ const t=(l.title||"").trim();
+    if(!t || /^(layer[_ ]?\d+|.*\/.+|.*_\d{3,})$/i.test(t) || t===t.toUpperCase()) bad.push(t||"(untitled)"); });
+  c.push(bad.length
+    ? chk("warn",bad.length+" layer title(s) look machine-generated: "+bad.slice(0,4).join(", ")+".")
+    : chk("pass","All layer titles are human-readable."));
+  if(n>4){
+    const wr=layers.filter(l=>l.minScale||l.maxScale).length;
+    c.push(chk(wr?"pass":"warn","Visibility (scale) ranges set on "+wr+" of "+n+" layers."));
+  }
+  return c;
+}
+function scoreBasemap(item,data){
+  const bm=data.baseMap||{}, title=(bm.title||"").trim(), layers=bm.baseMapLayers||[], c=[];
+  if(!layers.length){ c.push(chk("fail","No basemap defined.")); return c; }
+  c.push(chk("pass","Basemap present ("+layers.length+" layer(s))."));
+  c.push(chk(title?"pass":"warn","Basemap title: "+(title||"missing")+"."));
+  return c;
+}
+function scoreExtent(item,data){
+  const c=[], sr=data.spatialReference||{}, wkid=sr.latestWkid||sr.wkid;
+  c.push(chk(wkid?"pass":"warn","Spatial reference: "+(wkid||"unknown")+"."));
+  const ext=item.extent;
+  if(ext && ext.length===2){
+    const width=Math.abs(ext[1][0]-ext[0][0]);
+    c.push(width>300
+      ? chk("warn","Initial extent spans nearly the whole world; set a focused extent if the map is thematic.")
+      : chk("pass","Initial extent is set to a focused area."));
+  } else c.push(chk("warn","No saved initial extent found on the item."));
+  return c;
+}
+function scoreSymbology(item,data){
+  const c=[], layers=opLayers(data);
+  const dl=layers.filter(l=>l.layerDefinition||l.layerType==="ArcGISFeatureLayer");
+  if(!dl.length) return [chk("na","No feature layers to inspect for symbology.")];
+  let wr=0;
+  dl.forEach(l=>{ const di=((l.layerDefinition||{}).drawingInfo)||{}; if(di.renderer) wr++; });
+  const r=wr/dl.length;
+  c.push(chk(r>=0.75?"pass":"warn",wr+" of "+dl.length+" feature layers carry an explicit renderer."));
+  c.push(chk("na","Colour convention, contrast and colour-blind safety flagged for human review."));
+  return c;
+}
+const FUNCS={title:scoreTitle,metadata:scoreMetadata,popups:scorePopups,layers:scoreLayers,
+  basemap:scoreBasemap,extent:scoreExtent,symbology:scoreSymbology};
+
+function gradeOf(p){ return p>=90?"A":p>=80?"B":p>=70?"C":p>=60?"D":"F"; }
+function gradeColor(g){ return {A:"#1a7f37",B:"#4a9c2d",C:"#9a6700",D:"#c4661a",F:"#b42318"}[g]||"#57606a"; }
+
+function scoreMap(item,data){
+  const cats={}; let wsum=0, wtot=0;
+  RUBRIC.forEach(([key,label,weight])=>{
+    const checks=FUNCS[key](item,data);
+    const scored=checks.filter(c=>STATUS_PTS[c.status]!==null);
+    let pct=null;
+    if(scored.length){ pct=100*scored.reduce((a,c)=>a+STATUS_PTS[c.status],0)/scored.length; }
+    cats[key]={label,weight,score:pct,checks};
+    if(pct!==null){ wsum+=pct*weight; wtot+=weight; }
+  });
+  const overall=wtot?Math.round(wsum/wtot*10)/10:0;
+  return {item_id:item.id, title:item.title, owner:item.owner, type:item.type,
+    overall, grade:gradeOf(overall), categories:cats};
+}
+
+/* ============================================================
+   UI
+   ============================================================ */
+let RESULTS=[], SORT={key:"overall",asc:false};
+
+function switchTab(t){
+  document.getElementById("tab-list").classList.toggle("active",t==="list");
+  document.getElementById("tab-group").classList.toggle("active",t==="group");
+  document.getElementById("pane-list").classList.toggle("active",t==="list");
+  document.getElementById("pane-group").classList.toggle("active",t==="group");
+}
+function setStatus(s){ document.getElementById("status").textContent=s; }
+function setProgress(done,total){
+  const p=document.getElementById("progress"), f=document.getElementById("progressFill");
+  p.style.display = total?"block":"none";
+  f.style.width = total? (100*done/total)+"%":"0";
+}
+function showErr(msg){ document.getElementById("inputErr").innerHTML =
+  msg? '<div class="err">'+msg+'</div>':''; }
+function toast(msg){
+  const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show");
+  setTimeout(()=>t.classList.remove("show"),2200);
+}
+
+async function collectIds(){
+  const groupActive=document.getElementById("pane-group").classList.contains("active");
+  if(groupActive){
+    const raw=document.getElementById("group").value.trim();
+    const gid=(raw.match(/([0-9a-fA-F]{32})/)||[])[1];
+    if(!gid) throw new Error("Enter a valid 32-character group ID or group URL.");
+    const maxN=Math.max(1, parseInt(document.getElementById("max").value||"50",10));
+    setStatus("Fetching web maps in group…");
+    return await fetchGroupWebmaps(gid, maxN);
+  }
+  const lines=document.getElementById("ids").value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  const ids=[]; const bad=[];
+  lines.forEach(l=>{ const id=parseItemId(l); if(id) ids.push(id); else bad.push(l); });
+  if(bad.length) throw new Error("Could not read an item ID from: "+bad.slice(0,3).join(" | ")+
+    (bad.length>3?" …":""));
+  if(!ids.length) throw new Error("Paste at least one web map URL or item ID.");
+  return [...new Set(ids)];
+}
+
+async function run(){
+  showErr(""); RESULTS=[];
+  document.getElementById("run").disabled=true;
+  document.getElementById("csv").disabled=true;
+  try{
+    const ids=await collectIds();
+    setStatus("Scoring "+ids.length+" map(s)…");
+    let done=0; setProgress(0, ids.length);
+    const CONC=5; let idx=0;
+    async function worker(){
+      while(idx<ids.length){
+        const my=ids[idx++];
+        try{ const {item,data}=await fetchItem(my); RESULTS.push(scoreMap(item,data)); }
+        catch(e){ RESULTS.push({item_id:my,title:"(could not load "+my+")",owner:"",type:"",
+          overall:0,grade:"F",categories:{},error:e.message}); }
+        done++; setProgress(done, ids.length);
+        setStatus("Scored "+done+" of "+ids.length+"…");
+      }
+    }
+    await Promise.all(Array.from({length:Math.min(CONC,ids.length)},worker));
+    setStatus("Done. Scored "+RESULTS.length+" map(s).");
+    setProgress(0,0);
+    render();
+    document.getElementById("csv").disabled=false;
+  }catch(e){ showErr(e.message); setStatus(""); setProgress(0,0); }
+  document.getElementById("run").disabled=false;
+}
+
+function catScore(r,key){ const c=r.categories[key]; return (c&&c.score!==null&&c.score!==undefined)?c.score:null; }
+
+function sortBy(key){
+  if(SORT.key===key) SORT.asc=!SORT.asc; else {SORT.key=key; SORT.asc=false;}
+  render();
+}
+function sortVal(r,key){
+  if(key==="title") return (r.title||"").toLowerCase();
+  if(key==="grade") return r.grade;
+  if(key==="overall") return r.overall;
+  return catScore(r, key.replace("_s",""));
+}
+function render(){
+  const tbody=document.getElementById("tbody");
+  const rows=[...RESULTS].sort((a,b)=>{
+    let x=sortVal(a,SORT.key), y=sortVal(b,SORT.key);
+    if(x===null)x=-1; if(y===null)y=-1;
+    if(x<y)return SORT.asc?-1:1; if(x>y)return SORT.asc?1:-1; return 0;
+  });
+  document.querySelectorAll("#results th").forEach(th=>{
+    th.classList.toggle("sorted", th.dataset.k===SORT.key);
+    th.classList.toggle("asc", th.dataset.k===SORT.key && SORT.asc);
+  });
+  tbody.innerHTML="";
+  rows.forEach((r,i)=>{
+    const gc=gradeColor(r.grade);
+    const tr=document.createElement("tr"); tr.className="maprow";
+    tr.onclick=()=>toggleDetail(i);
+    tr.innerHTML =
+      '<td class="titlecell" title="'+esc(r.title||"")+'">'+
+        (r.error?'⚠ ':'')+esc(r.title||"(untitled)")+
+        '<div class="hint" style="margin:2px 0 0">'+esc(r.item_id||"")+'</div></td>'+
+      '<td>'+miniBar(r.overall)+' <b>'+r.overall.toFixed(0)+'</b></td>'+
+      '<td><span class="grade" style="background:'+gc+'">'+r.grade+'</span></td>'+
+      catCell(r,"title")+catCell(r,"metadata")+catCell(r,"popups")+
+      catCell(r,"layers")+catCell(r,"symbology");
+    tbody.appendChild(tr);
+
+    const dtr=document.createElement("tr"); dtr.className="detail"; dtr.style.display="none";
+    dtr.id="detail-"+i;
+    dtr.innerHTML='<td colspan="8"><div class="inner">'+detailHtml(r)+'</div></td>';
+    tbody.appendChild(dtr);
+  });
+  document.getElementById("resultsCard").style.display = RESULTS.length?"block":"none";
+  renderSummary(rows);
+}
+function renderSummary(rows){
+  const el=document.getElementById("summary");
+  if(!rows.length){ el.style.display="none"; return; }
+  const n=rows.length;
+  const avg=rows.reduce((a,r)=>a+r.overall,0)/n;
+  const dist={A:0,B:0,C:0,D:0,F:0}; rows.forEach(r=>dist[r.grade]++);
+  const flagged=rows.filter(r=>r.overall<70).length;
+  el.style.display="flex";
+  el.innerHTML =
+    stat(n,"maps scored")+
+    stat(avg.toFixed(1),"average score")+
+    stat(dist.A+dist.B,"grade A–B")+
+    stat(flagged,"need review (<70)");
+}
+const stat=(n,l)=>'<div class="stat"><div class="n">'+n+'</div><div class="l">'+l+'</div></div>';
+
+function catCell(r,key){
+  const s=catScore(r,key);
+  if(s===null) return '<td><span class="hint">n/a</span></td>';
+  return '<td>'+miniBar(s)+' '+s.toFixed(0)+'</td>';
+}
+function miniBar(pct){
+  const g=gradeOf(pct), col=gradeColor(g);
+  return '<span class="mini"><span class="f" style="width:'+pct.toFixed(0)+'%;background:'+col+'"></span></span>';
+}
+function toggleDetail(i){
+  const d=document.getElementById("detail-"+i);
+  d.style.display = d.style.display==="none"?"table-row":"none";
+}
+function detailHtml(r){
+  if(r.error) return '<div class="err">Could not load this item: '+esc(r.error)+
+    '. Make sure it is shared publicly.</div>';
+  let html='';
+  RUBRIC.forEach(([key,label,weight])=>{
+    const c=r.categories[key]; if(!c) return;
+    const sc = c.score===null? '<span class="hint">manual review</span>' : c.score.toFixed(0)+'%';
+    html+='<div class="catblock"><h4><span>'+esc(label)+
+      ' <span class="wt">weight '+weight+'</span></span><span>'+sc+'</span></h4><ul class="checks">';
+    c.checks.forEach(ch=>{
+      const cls={pass:"b-pass",warn:"b-warn",fail:"b-fail",na:"b-na"}[ch.status];
+      const lab={pass:"PASS",warn:"REVIEW",fail:"FAIL",na:"MANUAL"}[ch.status];
+      html+='<li><span class="badge '+cls+'">'+lab+'</span>'+esc(ch.message)+'</li>';
+    });
+    html+='</ul></div>';
+  });
+  const link=portalBase()+"/home/item.html?id="+r.item_id;
+  html+='<div style="margin-top:8px"><a href="'+link+'" target="_blank" rel="noopener">Open item page &#8599;</a></div>';
+  return html;
+}
+function esc(s){ return (s==null?"":String(s)).replace(/[&<>"]/g,
+  m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m])); }
+
+/* ---------- CSV ---------- */
+function csvCell(v){ v=(v==null?"":String(v)); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
+function downloadCSV(){
+  if(!RESULTS.length) return;
+  const cats=RUBRIC.map(r=>r[0]);
+  const header=["item_id","title","owner","type","overall_score","grade",
+    ...cats.map(c=>c+"_score"),"flags"];
+  const lines=[header.join(",")];
+  RESULTS.forEach(r=>{
+    const flags=[];
+    Object.values(r.categories||{}).forEach(c=>c.checks.forEach(ch=>{
+      if(ch.status==="fail"||ch.status==="warn") flags.push(ch.message);
+    }));
+    const row=[r.item_id,r.title,r.owner,r.type,r.overall,r.grade,
+      ...cats.map(c=>{const s=catScore(r,c); return s===null?"":s.toFixed(1);}),
+      flags.join(" | ")];
+    lines.push(row.map(csvCell).join(","));
+  });
+  const blob=new Blob([lines.join("\n")],{type:"text/csv;charset=utf-8;"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  const ts=new Date().toISOString().slice(0,10);
+  a.href=url; a.download="webmap_scorecard_"+ts+".csv";
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+function clearAll(){
+  RESULTS=[]; document.getElementById("ids").value="";
+  document.getElementById("group").value="";
+  document.getElementById("tbody").innerHTML="";
+  document.getElementById("resultsCard").style.display="none";
+  document.getElementById("summary").style.display="none";
+  document.getElementById("csv").disabled=true;
+  setStatus(""); showErr(""); setProgress(0,0);
+}
+
+/* ============================================================
+   Deep-linking  (?group= / ?ids= / ?max= / ?portal= / ?run=1)
+   ============================================================ */
+function applyUrlParams(){
+  const p = new URLSearchParams(location.search);
+  if(![...p.keys()].length) return false;
+
+  const portal = p.get("portal");
+  if(portal) document.getElementById("portal").value = portal;
+
+  const max = p.get("max");
+  if(max && /^\d+$/.test(max)) document.getElementById("max").value = max;
+
+  const group = p.get("group");
+  const ids = p.get("ids");
+  let tab = (p.get("tab")||"").toLowerCase();
+
+  if(group){
+    const gid = (group.match(/([0-9a-fA-F]{32})/)||[])[1] || group;
+    document.getElementById("group").value = gid;
+    if(!tab) tab = "group";
+  }
+  if(ids){
+    // accept comma, space or pipe separated
+    const list = ids.split(/[,\s|]+/).map(s=>s.trim()).filter(Boolean);
+    document.getElementById("ids").value = list.join("\n");
+    if(!tab) tab = "list";
+  }
+  if(tab==="group"||tab==="list") switchTab(tab);
+
+  const wantRun = ["1","true","yes"].includes((p.get("run")||"").toLowerCase());
+  return wantRun && (group || ids);
+}
+
+function buildShareLink(){
+  const base = location.origin + location.pathname;
+  const p = new URLSearchParams();
+  const groupActive = document.getElementById("pane-group").classList.contains("active");
+  const portal = document.getElementById("portal").value.trim();
+
+  if(groupActive){
+    const gid = (document.getElementById("group").value.match(/([0-9a-fA-F]{32})/)||[])[1];
+    if(!gid) throw new Error("Enter a group ID first, then copy the link.");
+    p.set("group", gid);
+    const max = document.getElementById("max").value.trim();
+    if(max && max!=="50") p.set("max", max);
+  }else{
+    const lines=document.getElementById("ids").value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+    const ids=[]; lines.forEach(l=>{const id=parseItemId(l); if(id) ids.push(id);});
+    if(!ids.length) throw new Error("Add at least one map, then copy the link.");
+    p.set("ids", [...new Set(ids)].join(","));
+  }
+  if(portal && portal!=="https://www.arcgis.com") p.set("portal", portal);
+  p.set("run","1");
+  return base + "?" + p.toString();
+}
+
+function copyShareLink(){
+  showErr("");
+  try{
+    const url = buildShareLink();
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(url).then(
+        ()=>toast("Shareable link copied to clipboard"),
+        ()=>{ prompt("Copy this deep-link URL:", url); });
+    }else{
+      prompt("Copy this deep-link URL:", url);
+    }
+  }catch(e){ showErr(e.message); }
+}
+
+/* ---------- boot ---------- */
+(function init(){
+  const autorun = applyUrlParams();
+  if(autorun) run();
+})();
+</script>
+</body>
+</html>
