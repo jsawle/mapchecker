@@ -60,7 +60,7 @@ button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .verdict{margin-top:10px;padding:10px 12px;border-radius:6px;font-size:14px;font-weight:500}
 .verdict.ready{background:var(--pass-bg);color:var(--pass)}
 .verdict.review{background:var(--warn-bg);color:var(--warn)}
-.verdict.blocked{background:var(--fail-bg);color:var(--fail)}
+.verdict.fail{background:var(--fail-bg);color:var(--fail)}
 .fixlist{margin-top:12px;font-size:13px}.fixlist .fixhead{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);font-weight:600;margin-bottom:4px}.fixlist ol{margin:0;padding-left:18px}.fixlist li{margin:2px 0}.fixlist li.fail{color:var(--fail)}.fixlist li.warn{color:var(--warn)}
 .actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
 .actions button{padding:7px 12px;font-size:13px}
@@ -128,7 +128,7 @@ footer{max-width:1180px;margin:40px auto 0;padding:0 28px;font-size:12px;color:v
    provisional: true = metadata requirement assumed, pending the distributor checklist
    ============================================================ */
 const RUBRIC = {
-  version: "0.6.0",
+  version: "0.7.0",
   standardsRef: "General Cartographic Standards for MapMaker",
   thresholds: {
     titleMax: 60,
@@ -174,7 +174,7 @@ const RUBRIC = {
     "layer.title":          {section:"Layers", severity:"warn", name:"Layer titles are plain language", guide:"Rename layers so they read in plain English (or the language of the map) rather than service names."},
     "layer.fields":         {section:"Layers", severity:"info", name:"Layer field count", guide:"Layers with very many fields are slow to load and hard to configure - consider publishing a view with only the fields the map needs."},
     "layer.renderer":       {section:"Layers", severity:"info", name:"Symbology set in the map", guide:"Feature layers using the service default symbology have not been styled for this map. (Raster/imagery layers are excluded - their rendering lives in the service.)"},
-    "popup.configured":     {section:"Pop-ups", severity:"fail", name:"Pop-ups configured (not default all-fields)", guide:"Configure pop-ups so they are clear, well-labelled, and only contain relevant information. Raster layers are assessed for a configured raster pop-up (pixel-value expression); reference/label layers are exempt."},
+    "popup.configured":     {section:"Pop-ups", severity:"warn", name:"Pop-ups configured (not default all-fields)", guide:"Configure pop-ups so they are clear, well-labelled, and only contain relevant information. Raster layers identify pixel values by default and are exempt; reference/label layers are exempt. A default vector pop-up is a guideline warning, not a publishing blocker."},
     "popup.metafields":     {section:"Pop-ups", severity:"warn", name:"Metadata fields hidden", guide:"Hide unnecessary or metadata fields (OBJECTID, GlobalID, Shape_Length, edit tracking)."},
     "popup.aliases":        {section:"Pop-ups", severity:"warn", name:"Fields renamed to plain language", guide:"Rename data fields so they read in plain language rather than abstract codes or IDs."},
     "popup.many":           {section:"Pop-ups", severity:"info", name:"Pop-up field count", guide:"Long pop-ups are hard to read on small screens - show only relevant fields."},
@@ -323,11 +323,14 @@ function minPairDeltaE(cols,adjacentOnly){
 }
 function rgbHex(c){ return '#'+c.map(v=>Math.round(v).toString(16).padStart(2,'0')).join(''); }
 /* ============================================================
-   Layer classification (v0.6.0)
+   Layer classification (v0.6.0+)
    ============================================================ */
 function isRasterLayer(l){
   return /Image|Raster|WMS|WMTS|TiledImageService/i.test(l.layerType||'');
 }
+// A raster pop-up is "configured for quality" only if popupInfo carries a pixel-value
+// expression, description, media, elements, or title. Absence of popupInfo is NOT a failure -
+// image services surface pixel values via default identify behaviour.
 function rasterPopupConfigured(pi){
   if(!pi) return false;
   if((pi.title||'').trim()) return true;
@@ -419,16 +422,17 @@ async function audit(itemId, onProgress){
   else if(noRenderer.length) set(res,'layer.renderer','info',noRenderer.length+' of '+styleable.length+' feature layer(s) use service default symbology.',noRenderer.map(l=>l.title));
   else note(res,'layer.renderer','all '+styleable.length+' feature layer(s) have a renderer defined in the map');
   // ---- Popups  (raster-aware + reference-layer aware)
+  // Fix (v0.7.0): image/raster layers identify pixel values by default; a missing popupInfo is
+  // NOT a failure. Default vector pop-ups are a guideline WARN, not a publishing blocker.
   const noPopup=[], metaVisible=[], codeAliases=[], manyFields=[]; let assessable=0;
   layers.forEach((l,i)=>{
-    if(l.disablePopup) return;
-    if(isReferenceLayer(l)) return;
-    if(isRasterLayer(l)){
-      assessable++;
-      if(!rasterPopupConfigured(l.popupInfo)) noPopup.push(l.title+' (raster layer, no pixel-value pop-up configured)');
-      return;
+    if(l.disablePopup) return;                       // explicitly off - fine
+    if(isReferenceLayer(l)) return;                  // graticule/labels - pop-ups unnecessary
+    if(isRasterLayer(l)){                            // RASTER: default pixel identify is fine
+      assessable++;                                  // counts as a satisfied data layer
+      return;                                        // never a fail; quality is advisory only
     }
-    if(l.kind!=='feature') return;
+    if(l.kind!=='feature') return;                   // tiled/other non-data - skip
     assessable++;
     const svcFields = probes[i].info && probes[i].info.fields ? probes[i].info.fields : (l.fields||[]);
     if(!l.popupInfo){ noPopup.push(l.title+' ('+(svcFields.length||'?')+' fields would show)'); return; }
@@ -442,8 +446,8 @@ async function audit(itemId, onProgress){
     if(!custom && fi.length>=3) noPopup.push(l.title+' (popup present but shows all '+fi.length+' fields, no title)');
   });
   if(!assessable) set(res,'popup.configured','skip','No data layers require a pop-up (map is raster-only reference or all layers exempt).');
-  else if(noPopup.length) set(res,'popup.configured','fail',noPopup.length+' of '+assessable+' data layer(s) show a default or missing pop-up.',noPopup);
-  else note(res,'popup.configured','all '+assessable+' data layer(s) have a configured pop-up');
+  else if(noPopup.length) set(res,'popup.configured','warn',noPopup.length+' of '+assessable+' data layer(s) show a default or missing pop-up.',noPopup);
+  else note(res,'popup.configured','all '+assessable+' data layer(s) have a configured pop-up (or identify pixel values by default)');
   const anyPopupCfg = layers.some(l=>l.kind==='feature' && l.popupInfo && !l.disablePopup && !isReferenceLayer(l));
   if(!anyPopupCfg){ set(res,'popup.metafields','skip','Not assessed - no vector pop-up configuration to check.'); set(res,'popup.aliases','skip','Not assessed - no vector pop-up configuration to check.'); set(res,'popup.many','skip','Not assessed - no vector pop-up configuration to check.'); }
   else {
@@ -556,7 +560,7 @@ function round(n){ return Number(n).toFixed(0); }
    ============================================================ */
 const $=id=>document.getElementById(id);
 function tally(res){ const t={fail:0,warn:0,info:0,pass:0,skip:0}; for(const id in res) t[res[id].status]++; return t; }
-function verdict(t){ return t.fail?'blocked': t.warn?'review':'ready'; }
+function verdict(t){ return t.fail?'fail': t.warn?'review':'ready'; }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2000); }
 const stat=(n,l)=>'<div class="stat"><div class="n">'+n+'</div><div class="l">'+l+'</div></div>';
@@ -580,7 +584,7 @@ function renderReport(a, target){
     }
     right+='</div>';
   }
-  const verdictText={ready:'No blocking issues. Ready for cartographer review.',review:'No blocking issues, but guideline warnings to resolve or justify before review.',blocked:'Publishing requirements not met - fix the failed items first.'}[v];
+  const verdictText={ready:'No blocking issues. Ready for cartographer review.',review:'No blocking issues, but guideline warnings to resolve or justify before review.',fail:'Publishing requirements not met - fix the failed items first.'}[v];
   const gc=gradeColor(sc.grade);
   const secpills=SECTIONS.map(s=>sc.sections[s]==null?'':'<span class="s" title="'+esc(s)+'">'+esc(secAbbr(s))+' '+sc.sections[s].toFixed(0)+'</span>').join('');
   const left='<div class="card mapcard">'+(thumb?'<img src="'+thumb+'" alt="">':'<div style="aspect-ratio:2/1.3;background:#e5e8ee"></div>')+'<div class="body"><h2>'+esc(item.title||'(no title)')+'</h2><div class="meta"><b>id</b> '+item.id+'</div><div class="meta"><b>owner</b> '+esc(item.owner||'')+'</div><div class="meta"><b>modified</b> '+new Date(item.modified).toISOString().slice(0,10)+'</div><div class="meta"><b>layers</b> '+a.layers.length+'</div><div class="scoreband"><div class="gradeBadge" style="background:'+gc+'"><div class="g">'+sc.grade+'</div><div class="n">'+(sc.overall==null?'-':sc.overall.toFixed(0))+'</div></div><div class="secscores">'+secpills+'</div></div><div class="tally"><span class="pill fail">'+t.fail+' fail</span><span class="pill warn">'+t.warn+' warn</span><span class="pill info">'+t.info+' info</span><span class="pill pass">'+t.pass+' pass</span></div><div class="verdict '+v+'">'+verdictText+'</div>'+fixList(results)+'<div class="actions"><button class="secondary copyjson">Copy results as JSON</button><a href="https://www.arcgis.com/home/item.html?id='+item.id+'" target="_blank" rel="noopener"><button class="secondary">Open item</button></a></div></div></div>';
@@ -623,14 +627,14 @@ function drawBatch(){
   const {rows, audits, sort}=BATCH;
   const scored=rows.filter(r=>!r.err && r.score!=null);
   const avg=scored.length? scored.reduce((a,r)=>a+r.score,0)/scored.length : null;
-  const cnt={ready:0,review:0,blocked:0,error:0};
+  const cnt={ready:0,review:0,fail:0,error:0};
   rows.forEach(r=> r.err? cnt.error++ : cnt[r.v]++);
   const summary='<div class="summary">'+
     stat(rows.length,'maps audited')+
     stat(avg==null?'-':avg.toFixed(1),'average score')+
     stat(cnt.ready,'ready')+
     stat(cnt.review,'review')+
-    stat(cnt.blocked+ (cnt.error?(' + '+cnt.error+' err'):''),'blocked')+
+    stat(cnt.fail+ (cnt.error?(' + '+cnt.error+' err'):''),'fail')+
     '</div>';
   const cols=[['title','Map'],['owner','Owner'],['score','Score'],['grade','Grade'],['v','Verdict'],['fail','Fail'],['warn','Warn'],['info','Info']];
   const thead=cols.map(([k,l])=>'<th class="sortable'+(sort.key===k?' sorted'+(sort.asc?' asc':''):'')+'" data-k="'+k+'">'+l+'</th>').join('');
@@ -638,7 +642,7 @@ function drawBatch(){
   const body=sorted.map(r=>{
     if(r.err) return '<tr data-id="'+r.id+'"><td>'+esc(r.title)+'<br><span class="n">'+r.id+'</span></td><td>'+esc(r.owner||'')+'</td><td class="n">-</td><td>-</td><td><span class="pill error">error</span> '+esc(r.err)+'</td><td class="n"></td><td class="n"></td><td class="n"></td></tr>';
     const gc=gradeColor(r.grade);
-    return '<tr data-id="'+r.id+'"><td>'+esc(r.title)+'<br><span class="n">'+r.id+'</span></td><td>'+esc(r.owner||'')+'</td><td class="n"><b>'+(r.score==null?'-':r.score.toFixed(0))+'</b></td><td><span class="gpill" style="background:'+gc+'">'+r.grade+'</span></td><td><span class="pill '+(r.v==='blocked'?'fail':r.v==='review'?'warn':'pass')+'">'+r.v+'</span></td><td class="n">'+r.t.fail+'</td><td class="n">'+r.t.warn+'</td><td class="n">'+r.t.info+'</td></tr>';
+    return '<tr data-id="'+r.id+'"><td>'+esc(r.title)+'<br><span class="n">'+r.id+'</span></td><td>'+esc(r.owner||'')+'</td><td class="n"><b>'+(r.score==null?'-':r.score.toFixed(0))+'</b></td><td><span class="gpill" style="background:'+gc+'">'+r.grade+'</span></td><td><span class="pill '+(r.v==='fail'?'fail':r.v==='review'?'warn':'pass')+'">'+r.v+'</span></td><td class="n">'+r.t.fail+'</td><td class="n">'+r.t.warn+'</td><td class="n">'+r.t.info+'</td></tr>';
   }).join('');
   $('out').innerHTML='<div class="batch">'+summary+'<div class="actions" style="margin-bottom:10px"><button class="secondary" id="copybatch">Copy batch as JSON</button></div><div id="detail"></div><table class="batch"><thead><tr>'+thead+'</tr></thead><tbody>'+body+'</tbody></table></div>';
   document.querySelectorAll('table.batch th.sortable').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; if(BATCH.sort.key===k) BATCH.sort.asc=!BATCH.sort.asc; else {BATCH.sort.key=k; BATCH.sort.asc=true;} drawBatch(); });
