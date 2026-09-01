@@ -125,35 +125,21 @@ footer{max-width:1180px;margin:40px auto 0;padding:0 28px;font-size:12px;color:v
 /* ============================================================
    RUBRIC - edit here. Version this string when criteria change.
    severity: fail = publishing requirement | warn = guideline heuristic | info = advisory
-   provisional: true = metadata requirement assumed, pending the distributor checklist
    ============================================================ */
 const RUBRIC = {
-  version: "0.7.0",
+  version: "0.7.1",
   standardsRef: "General Cartographic Standards for MapMaker",
   thresholds: {
-    titleMax: 60,
-    descriptionMin: 100,
-    tagsMin: 3,
-    layersMaxSoft: 15,
-    popupFieldsManySoft: 8,
-    effectsLayersSoft: 2,
-    fontsMax: 2,
-    propSymbolMinRatio: 2,
-    globalScaleMinWidthDeg: 200,
-    deltaEMin: 12,
-    deltaEMinCVD: 10,
-    pointSymbolMinPx: 6,
-    lineMinPx: 1,
-    labelFontMinPt: 10,
-    opacityMin: 0.3
+    titleMax: 60, descriptionMin: 100, tagsMin: 3, layersMaxSoft: 15,
+    popupFieldsManySoft: 8, effectsLayersSoft: 2, fontsMax: 2, propSymbolMinRatio: 2,
+    globalScaleMinWidthDeg: 200, deltaEMin: 12, deltaEMinCVD: 10,
+    pointSymbolMinPx: 6, lineMinPx: 1, labelFontMinPt: 10, opacityMin: 0.3
   },
   metadataFieldPattern: /^(objectid|fid|globalid|shape(_|\.)?(length|area|leng|len|starea|stlength)?|shape__?(length|area)|created_(user|date)|last_edited_(user|date)|editdate|creator|editor)$/i,
   codeLikeFieldPattern: /(^[A-Z0-9_]{2,}$)|(_)|(^[a-z]{1,4}\d*$)/,
   countFieldPattern: /(pop|popul|total|count|cnt|num|sum|qty|households|persons|people)/i,
   abbrevAllow: /^(GDP|GNP|CO2|USA|UK|EU|UN|NASA|NOAA|WHO|GIS|HIV|AIDS|UV|3D|2D|ID)$/i,
   serviceNamePattern: /^[A-Za-z0-9]+(_[A-Za-z0-9]+)+$/,
-  // Layers whose PURPOSE is reference/decoration - pop-ups & renderers are legitimately absent.
-  // Standards: "turn pop-ups off for layers for which they are unnecessary".
   referenceLayerPattern: /(parallels and meridians|degree grid|graticule|latitude|longitude|reference labels?|place labels?|\blabels?\b|hillshade|terrain|basemap|reference layer|boundaries reference|ocean\b|land\b|water labels|global background|country labels|city labels|sketch|annotation)/i,
   checks: {
     "meta.title.present":   {section:"Map title & metadata", severity:"fail", provisional:true, name:"Title present and not a default", guide:"Map title should clearly indicate the subject of the map."},
@@ -174,7 +160,7 @@ const RUBRIC = {
     "layer.title":          {section:"Layers", severity:"warn", name:"Layer titles are plain language", guide:"Rename layers so they read in plain English (or the language of the map) rather than service names."},
     "layer.fields":         {section:"Layers", severity:"info", name:"Layer field count", guide:"Layers with very many fields are slow to load and hard to configure - consider publishing a view with only the fields the map needs."},
     "layer.renderer":       {section:"Layers", severity:"info", name:"Symbology set in the map", guide:"Feature layers using the service default symbology have not been styled for this map. (Raster/imagery layers are excluded - their rendering lives in the service.)"},
-    "popup.configured":     {section:"Pop-ups", severity:"warn", name:"Pop-ups configured (not default all-fields)", guide:"Configure pop-ups so they are clear, well-labelled, and only contain relevant information. Raster layers identify pixel values by default and are exempt; reference/label layers are exempt. A default vector pop-up is a guideline warning, not a publishing blocker."},
+    "popup.configured":     {section:"Pop-ups", severity:"warn", name:"Pop-ups configured (not default all-fields)", guide:"Configure pop-ups so they are clear, well-labelled, and only contain relevant information. Authored pop-ups - including Arcade expressions, text/media elements, and curated field lists - count as configured. Raster layers identify pixel values by default and are exempt; reference/label layers are exempt. A default vector pop-up is a guideline warning, not a publishing blocker."},
     "popup.metafields":     {section:"Pop-ups", severity:"warn", name:"Metadata fields hidden", guide:"Hide unnecessary or metadata fields (OBJECTID, GlobalID, Shape_Length, edit tracking)."},
     "popup.aliases":        {section:"Pop-ups", severity:"warn", name:"Fields renamed to plain language", guide:"Rename data fields so they read in plain language rather than abstract codes or IDs."},
     "popup.many":           {section:"Pop-ups", severity:"info", name:"Pop-up field count", guide:"Long pop-ups are hard to read on small screens - show only relevant fields."},
@@ -198,9 +184,6 @@ const RUBRIC = {
 };
 document.getElementById('ver').textContent = 'rubric v' + RUBRIC.version;
 
-/* ============================================================
-   Scoring roll-up. fail-severity weigh more than warn; info/skip unscored.
-   ============================================================ */
 const SECTIONS = ["Map title & metadata","Extent & scale","Layers","Pop-ups","Visual effects & labels","Accessibility","Symbology & legend"];
 const SEC_ABBR = {"Map title & metadata":"Meta","Extent & scale":"Extent","Layers":"Layers","Pop-ups":"Pop-ups","Visual effects & labels":"Effects","Accessibility":"A11y","Symbology & legend":"Symbology"};
 const SEV_WEIGHT = {fail:3, warn:1, info:0};
@@ -225,9 +208,6 @@ function scoreResults(results){
 }
 function secAbbr(s){ return SEC_ABBR[s]||s; }
 
-/* ============================================================
-   Fetch helpers
-   ============================================================ */
 const PORTAL = 'https://www.arcgis.com/sharing/rest';
 async function getJSON(url){
   const r = await fetch(url, {cache:'no-store'});
@@ -263,9 +243,6 @@ async function mapLimit(items, n, fn){
   }));
   return res;
 }
-/* ============================================================
-   Colour helpers
-   ============================================================ */
 function lum([r,g,b]){ const f=c=>{c/=255;return c<=.03928?c/12.92:Math.pow((c+.055)/1.055,2.4)}; return .2126*f(r)+.7152*f(g)+.0722*f(b); }
 function rgbOf(sym){
   if(!sym) return null;
@@ -322,28 +299,53 @@ function minPairDeltaE(cols,adjacentOnly){
   return {min,pair};
 }
 function rgbHex(c){ return '#'+c.map(v=>Math.round(v).toString(16).padStart(2,'0')).join(''); }
+function isRasterLayer(l){ return /Image|Raster|WMS|WMTS|TiledImageService/i.test(l.layerType||''); }
+function isReferenceLayer(l){ return RUBRIC.referenceLayerPattern.test(l.title||''); }
+
 /* ============================================================
-   Layer classification (v0.6.0+)
+   Pop-up classification (v0.7.1)
+   Detect *how* a pop-up is authored so Arcade / element-based
+   pop-ups are recognised as configured, not flagged as default.
+   Returns one of:
+     'none'    - no popupInfo at all
+     'disabled'- pop-ups explicitly turned off
+     'arcade'  - Arcade expression drives the content
+     'elements'- modern popupElements (text/fields/media/relationship)
+     'media'   - charts/images via mediaInfos
+     'description' - classic HTML/text description
+     'fields'  - curated fieldInfos (some hidden or titled/aliased)
+     'default' - present but shows all service fields, no title/description
    ============================================================ */
-function isRasterLayer(l){
-  return /Image|Raster|WMS|WMTS|TiledImageService/i.test(l.layerType||'');
+function popupKind(pi){
+  if(!pi) return 'none';
+  const els = pi.popupElements||[];
+  const exprs = pi.expressionInfos||[];
+  // 1) Arcade: an expression element, OR an expression referenced in text/description,
+  //    OR expressionInfos defined at all (favour recognising authored content).
+  const arcadeToken = /\{expression\//;
+  const elHasExpr = els.some(e => e && (e.type==='expression'
+      || (e.type==='text' && arcadeToken.test(e.text||''))));
+  if(elHasExpr) return 'arcade';
+  if((pi.description||'') && arcadeToken.test(pi.description)) return 'arcade';
+  if(exprs.length) return 'arcade';
+  // 2) Modern element model (text/fields/media/relationship/attachments)
+  if(els.some(e => e && ['text','fields','media','relationship','attachments','utilityNetworkAssociations'].includes(e.type))) return 'elements';
+  // 3) Media (charts/images) in classic model
+  if((pi.mediaInfos||[]).length) return 'media';
+  // 4) Classic HTML/text description
+  if((pi.description||'').trim()) return 'description';
+  // 5) Curated fieldInfos: any hidden field, or any custom label/alias, or a pop-up title
+  const fi = pi.fieldInfos||[];
+  const anyHidden = fi.some(f => f.visible===false);
+  const anyLabelled = fi.some(f => (f.label||'').trim());
+  if((pi.title||'').trim() || anyHidden || anyLabelled) return 'fields';
+  // 6) Present but nothing authored -> effectively the default all-fields pop-up
+  if(fi.length) return 'default';
+  return 'default';
 }
-// A raster pop-up is "configured for quality" only if popupInfo carries a pixel-value
-// expression, description, media, elements, or title. Absence of popupInfo is NOT a failure -
-// image services surface pixel values via default identify behaviour.
-function rasterPopupConfigured(pi){
-  if(!pi) return false;
-  if((pi.title||'').trim()) return true;
-  if((pi.description||'').trim()) return true;
-  if(pi.expressionInfos && pi.expressionInfos.length) return true;
-  if(pi.mediaInfos && pi.mediaInfos.length) return true;
-  if(pi.popupElements && pi.popupElements.length) return true;
-  if((pi.fieldInfos||[]).some(f=>f.visible!==false && /pixel|value|raster/i.test(f.fieldName||''))) return true;
-  return false;
-}
-function isReferenceLayer(l){
-  return RUBRIC.referenceLayerPattern.test(l.title||'');
-}
+// Authored = anything a person deliberately set up (Arcade included). Not a fail.
+function popupIsAuthored(kind){ return ['arcade','elements','media','description','fields'].includes(kind); }
+
 /* ============================================================
    Checks
    ============================================================ */
@@ -357,7 +359,6 @@ async function audit(itemId, onProgress){
   if(item.type!=='Web Map') throw new Error('Item is a ' + item.type + ', not a Web Map');
   const data = await fetchData(itemId);
   const layers = (data.operationalLayers||[]).flatMap(flattenLayer);
-  // ---- Metadata
   const title=(item.title||'').trim();
   if(!title || /^untitled/i.test(title) || /^map\d*$/i.test(title)) set(res,'meta.title.present','fail','Title missing or default.','title: "'+title+'"');
   else note(res,'meta.title.present','title: "'+title+'"');
@@ -379,7 +380,6 @@ async function audit(itemId, onProgress){
   if(!(item.accessInformation||'').trim()) set(res,'meta.credits','fail','Credits (attribution) field is empty.','accessInformation: empty'); else note(res,'meta.credits','credits: '+item.accessInformation);
   if(!stripHtml(item.licenseInfo||'').trim()) set(res,'meta.license','fail','No terms of use set.','licenseInfo: empty'); else note(res,'meta.license','licenseInfo: set');
   if(!item.thumbnail) set(res,'meta.thumbnail','warn','No custom thumbnail - the default will show in galleries.','thumbnail: none'); else if(/ago_downloaded|thumbnail\.(png|jpe?g)$/i.test(item.thumbnail)) set(res,'meta.thumbnail','info','Thumbnail appears to be the auto-generated map capture - consider a designed thumbnail for the gallery.','thumbnail: '+item.thumbnail); else note(res,'meta.thumbnail','thumbnail: '+item.thumbnail);
-  // ---- Extent & projection
   const vp = data.initialState && data.initialState.viewpoint;
   const ext = vp && vp.targetGeometry;
   const wkid = (data.spatialReference && (data.spatialReference.latestWkid||data.spatialReference.wkid)) || (ext && ext.spatialReference && (ext.spatialReference.latestWkid||ext.spatialReference.wkid));
@@ -403,7 +403,6 @@ async function audit(itemId, onProgress){
     if(!/projection|projected|conic|equal.?area|winkel|robinson|mollweide|azimuthal|equidistant|polar/i.test(desc)) set(res,'proj.explained','warn','Map uses a non-Web Mercator spatial reference (wkid '+wkid+') and the description does not mention the projection.','wkid: '+wkid);
     else note(res,'proj.explained','wkid '+wkid+'; description mentions projection');
   } else note(res,'proj.explained','wkid '+(wkid||'3857')+' (Web Mercator)');
-  // ---- Layers
   if(layers.length>T.layersMaxSoft) set(res,'layer.count','warn',layers.length+' operational layers.',layers.map(l=>l.title));
   else note(res,'layer.count',layers.length+' operational layers');
   onProgress && onProgress('Probing '+layers.length+' layer services...');
@@ -421,33 +420,31 @@ async function audit(itemId, onProgress){
   if(!styleable.length) set(res,'layer.renderer','skip','No stylable feature layers in the map (raster/reference layers render from the service).');
   else if(noRenderer.length) set(res,'layer.renderer','info',noRenderer.length+' of '+styleable.length+' feature layer(s) use service default symbology.',noRenderer.map(l=>l.title));
   else note(res,'layer.renderer','all '+styleable.length+' feature layer(s) have a renderer defined in the map');
-  // ---- Popups  (raster-aware + reference-layer aware)
-  // Fix (v0.7.0): image/raster layers identify pixel values by default; a missing popupInfo is
-  // NOT a failure. Default vector pop-ups are a guideline WARN, not a publishing blocker.
-  const noPopup=[], metaVisible=[], codeAliases=[], manyFields=[]; let assessable=0;
+  // ---- Popups (v0.7.1: Arcade & element aware, with popup_kind evidence) ----
+  const noPopup=[], metaVisible=[], codeAliases=[], manyFields=[], kinds=[]; let assessable=0;
   layers.forEach((l,i)=>{
-    if(l.disablePopup) return;                       // explicitly off - fine
-    if(isReferenceLayer(l)) return;                  // graticule/labels - pop-ups unnecessary
-    if(isRasterLayer(l)){                            // RASTER: default pixel identify is fine
-      assessable++;                                  // counts as a satisfied data layer
-      return;                                        // never a fail; quality is advisory only
-    }
-    if(l.kind!=='feature') return;                   // tiled/other non-data - skip
+    if(l.disablePopup){ kinds.push(l.title+': disabled'); return; }
+    if(isReferenceLayer(l)){ kinds.push(l.title+': reference (exempt)'); return; }
+    if(isRasterLayer(l)){ assessable++; kinds.push(l.title+': raster (pixel identify)'); return; }
+    if(l.kind!=='feature'){ kinds.push(l.title+': '+(l.layerType||'other')+' (exempt)'); return; }
     assessable++;
+    const kind = popupKind(l.popupInfo);
+    kinds.push(l.title+': '+kind);
     const svcFields = probes[i].info && probes[i].info.fields ? probes[i].info.fields : (l.fields||[]);
-    if(!l.popupInfo){ noPopup.push(l.title+' ('+(svcFields.length||'?')+' fields would show)'); return; }
+    if(kind==='none'){ noPopup.push(l.title+' (no pop-up; '+(svcFields.length||'?')+' fields would show by default)'); return; }
+    if(kind==='default'){ noPopup.push(l.title+' (default all-fields pop-up, no title/description/expression)'); return; }
+    // kind is authored (arcade/elements/media/description/fields) -> configured.
+    // Still run *quality* sub-checks on any visible fieldInfos (Arcade pop-ups can still leak junk fields).
     const fi=(l.popupInfo.fieldInfos||[]).filter(f=>f.visible!==false);
     const meta=fi.filter(f=>RUBRIC.metadataFieldPattern.test(f.fieldName));
     if(meta.length) metaVisible.push(l.title+': '+meta.map(f=>f.fieldName).join(', '));
     const codes=fi.filter(f=>{ const raw=f.fieldName||''; const svcAlias=(svcFields.find(s=>s.name===raw)||{}).alias; const eff = f.label||svcAlias||raw; return eff===raw && RUBRIC.codeLikeFieldPattern.test(raw) && !RUBRIC.metadataFieldPattern.test(raw); });
     if(codes.length) codeAliases.push(l.title+': '+codes.map(f=>f.fieldName).join(', '));
     if(fi.length>T.popupFieldsManySoft) manyFields.push(l.title+': '+fi.length+' visible fields');
-    const custom = l.popupInfo.title || l.popupInfo.description || (l.popupInfo.popupElements&&l.popupInfo.popupElements.length) || (l.popupInfo.mediaInfos&&l.popupInfo.mediaInfos.length) || (l.popupInfo.expressionInfos&&l.popupInfo.expressionInfos.length) || (l.popupInfo.fieldInfos||[]).some(f=>f.visible===false);
-    if(!custom && fi.length>=3) noPopup.push(l.title+' (popup present but shows all '+fi.length+' fields, no title)');
   });
-  if(!assessable) set(res,'popup.configured','skip','No data layers require a pop-up (map is raster-only reference or all layers exempt).');
-  else if(noPopup.length) set(res,'popup.configured','warn',noPopup.length+' of '+assessable+' data layer(s) show a default or missing pop-up.',noPopup);
-  else note(res,'popup.configured','all '+assessable+' data layer(s) have a configured pop-up (or identify pixel values by default)');
+  if(!assessable) set(res,'popup.configured','skip','No data layers require a pop-up (map is raster-only reference or all layers exempt).', kinds);
+  else if(noPopup.length) set(res,'popup.configured','warn',noPopup.length+' of '+assessable+' data layer(s) show a default or missing pop-up.',noPopup.concat(['--- pop-up kinds ---'], kinds));
+  else set(res,'popup.configured','pass','All '+assessable+' data layer(s) have an authored pop-up (Arcade / elements / fields / media / raster identify).', kinds);
   const anyPopupCfg = layers.some(l=>l.kind==='feature' && l.popupInfo && !l.disablePopup && !isReferenceLayer(l));
   if(!anyPopupCfg){ set(res,'popup.metafields','skip','Not assessed - no vector pop-up configuration to check.'); set(res,'popup.aliases','skip','Not assessed - no vector pop-up configuration to check.'); set(res,'popup.many','skip','Not assessed - no vector pop-up configuration to check.'); }
   else {
@@ -455,7 +452,6 @@ async function audit(itemId, onProgress){
   if(codeAliases.length) set(res,'popup.aliases','warn','Code-like field names shown without a plain-language label in '+codeAliases.length+' layer(s).',codeAliases); else note(res,'popup.aliases','visible fields have readable labels');
   if(manyFields.length) set(res,'popup.many','info','Long pop-ups in '+manyFields.length+' layer(s).',manyFields); else note(res,'popup.many','pop-ups within field-count guideline');
   }
-  // ---- Effects, fonts, labels
   const withEffects = layers.filter(l=>l.effect || (l.blendMode && l.blendMode!=='normal'));
   if(withEffects.length>T.effectsLayersSoft) set(res,'effects.sparingly','warn',withEffects.length+' layers use effects or blend modes.',withEffects.map(l=>l.title+': '+describeEffect(l)));
   else note(res,'effects.sparingly',withEffects.length?withEffects.map(l=>l.title+': '+describeEffect(l)):'no layer effects');
@@ -466,7 +462,6 @@ async function audit(itemId, onProgress){
   layers.forEach(l=>{ (l.labelingInfo||[]).forEach(li=>{ const s=li.symbol||{}; const f=(s.font&&s.font.family)||(s.symbolLayers&&s.symbolLayers[0]&&s.symbolLayers[0].font&&s.symbolLayers[0].font.family); if(f) fonts.add(f); const halo = s.haloSize>0 || (s.symbolLayers&&s.symbolLayers.some(sl=>sl.halo)); if(!halo) noHalo.push(l.title+': '+(f||'default font')); }); });
   if(fonts.size>T.fontsMax) set(res,'fonts.max','warn',fonts.size+' label fonts in use.',[...fonts]); else note(res,'fonts.max',fonts.size?[...fonts]:'no map labels');
   if(noHalo.length) set(res,'labels.halo','info',noHalo.length+' label class(es) without a halo.',noHalo); else note(res,'labels.halo','all label classes have halos');
-  // ---- Symbology & legend
   const cntChoro=[], rampBad=[], uniqDup=[], propBad=[], legendBad=[], divergingUsed=[], colourOnly=[], a11yColours=[], smallSym=[], smallLabel=[], lowOpacity=[], unreadable=[]; let classRenderers=0;
   layers.forEach(l=>{
     if(typeof l.opacity==='number' && l.opacity<T.opacityMin) lowOpacity.push(l.title+': opacity '+l.opacity);
@@ -555,9 +550,6 @@ function effectString(l){ if(!l.effect) return ''; return typeof l.effect==='str
 function describeEffect(l){ const parts=[]; if(l.effect) parts.push(effectString(l).slice(0,80)); if(l.blendMode&&l.blendMode!=='normal') parts.push('blend: '+l.blendMode); return parts.join('; '); }
 function stripHtml(s){ return String(s).replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim(); }
 function round(n){ return Number(n).toFixed(0); }
-/* ============================================================
-   Rendering
-   ============================================================ */
 const $=id=>document.getElementById(id);
 function tally(res){ const t={fail:0,warn:0,info:0,pass:0,skip:0}; for(const id in res) t[res[id].status]++; return t; }
 function verdict(t){ return t.fail?'fail': t.warn?'review':'ready'; }
@@ -595,11 +587,7 @@ function renderReport(a, target){
 function fixList(results){ const items=Object.values(results).filter(r=>r.status==='fail'||r.status==='warn').sort((a,b)=>(a.status==='fail'?0:1)-(b.status==='fail'?0:1)); if(!items.length) return ''; return '<div class="fixlist"><div class="fixhead">To fix</div><ol>'+items.map(r=>'<li class="'+r.status+'">'+esc(RUBRIC.checks[r.id].name)+'</li>').join('')+'</ol></div>'; }
 function exportJSON(a){ const sc=scoreResults(a.results); return {itemId:a.item.id, title:a.item.title, owner:a.item.owner, auditedAt:a.auditedAt, rubricVersion:a.rubricVersion, standards:RUBRIC.standardsRef, tally:tally(a.results), verdict:verdict(tally(a.results)), score:sc.overall, grade:sc.grade, sectionScores:sc.sections, checks:Object.values(a.results).map(r=>({id:r.id, section:RUBRIC.checks[r.id].section, name:RUBRIC.checks[r.id].name, severity:RUBRIC.checks[r.id].severity, provisional:!!RUBRIC.checks[r.id].provisional, status:r.status, message:r.msg, evidence:r.evidence.filter(Boolean)}))}; }
 
-/* ============================================================
-   Batch (group or id-list) with score, sortable table, CSV
-   ============================================================ */
 let BATCH={rows:[], audits:{}, sort:{key:'score', asc:true}, meta:null};
-
 async function auditCollection(maps, meta){
   const rows=[]; const audits={};
   for(let i=0;i<maps.length;i++){
@@ -650,7 +638,6 @@ function drawBatch(){
   $('copybatch').onclick=e=>{ navigator.clipboard.writeText(JSON.stringify({source:BATCH.meta, auditedAt:new Date().toISOString(), rubricVersion:RUBRIC.version, maps:Object.values(audits).map(exportJSON)},null,2)); e.target.textContent='Copied'; setTimeout(()=>e.target.textContent='Copy batch as JSON',1500); };
 }
 
-/* ---------- CSV ---------- */
 function csvCell(v){ v=(v==null?'':String(v)); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
 function sectionCounts(results){
   const out={}; for(const s of SECTIONS) out[s]={pass:0,warn:0,fail:0,info:0,skip:0};
@@ -658,10 +645,18 @@ function sectionCounts(results){
     if(out[s] && out[s][st]!==undefined) out[s][st]++; }
   return out;
 }
+// pop-up kinds pulled from the popup.configured evidence for CSV reporting
+function popupKindsFor(results){
+  const ev=(results['popup.configured']||{}).evidence||[];
+  const kinds=[]; let seen=false;
+  for(const e of ev){ if(e==='--- pop-up kinds ---'){ seen=true; continue; }
+    if(seen || /: (arcade|elements|media|description|fields|default|none|disabled|raster|reference)/.test(e)) kinds.push(e); }
+  return kinds.join(' ; ');
+}
 function rowForCSV(a){
   const t=tally(a.results); const sc=scoreResults(a.results); const cnt=sectionCounts(a.results);
   const flags=Object.values(a.results).filter(r=>r.status==='fail'||r.status==='warn').map(r=>RUBRIC.checks[r.id].name+(r.msg?': '+r.msg:''));
-  return {id:a.item.id, title:a.item.title, owner:a.item.owner, verdict:verdict(t), score:sc.overall, grade:sc.grade, t, sections:sc.sections, counts:cnt, flags};
+  return {id:a.item.id, title:a.item.title, owner:a.item.owner, verdict:verdict(t), score:sc.overall, grade:sc.grade, t, sections:sc.sections, counts:cnt, flags, popupKinds:popupKindsFor(a.results)};
 }
 function downloadCSV(){
   let recs=[];
@@ -670,13 +665,13 @@ function downloadCSV(){
   else return;
   const secCols=[];
   SECTIONS.forEach(s=>{ const a=secAbbr(s); secCols.push(a+'_score',a+'_pass',a+'_warn',a+'_fail',a+'_info'); });
-  const header=['item_id','title','owner','verdict','overall_score','grade','total_fail','total_warn','total_info','total_pass', ...secCols, 'flags'];
+  const header=['item_id','title','owner','verdict','overall_score','grade','total_fail','total_warn','total_info','total_pass', ...secCols, 'popup_kinds', 'flags'];
   const lines=[header.join(',')];
   recs.forEach(r=>{
-    if(r.err){ lines.push([r.id,r.title,r.owner,'ERROR','','','','','','',...secCols.map(()=>''),r.err].map(csvCell).join(',')); return; }
+    if(r.err){ lines.push([r.id,r.title,r.owner,'ERROR','','','','','','',...secCols.map(()=>''),'',r.err].map(csvCell).join(',')); return; }
     const secVals=[];
     SECTIONS.forEach(s=>{ const c=r.counts[s]||{pass:0,warn:0,fail:0,info:0}; secVals.push(r.sections[s]==null?'':r.sections[s], c.pass, c.warn, c.fail, c.info); });
-    const row=[r.id,r.title,r.owner,r.verdict,(r.score==null?'':r.score),r.grade,r.t.fail,r.t.warn,r.t.info,r.t.pass, ...secVals, r.flags.join(' | ')];
+    const row=[r.id,r.title,r.owner,r.verdict,(r.score==null?'':r.score),r.grade,r.t.fail,r.t.warn,r.t.info,r.t.pass, ...secVals, r.popupKinds, r.flags.join(' | ')];
     lines.push(row.map(csvCell).join(','));
   });
   const blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8;'});
@@ -685,7 +680,6 @@ function downloadCSV(){
   document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 
-/* ---------- shareable deep-link ---------- */
 function copyLink(){
   const base=location.origin+location.pathname; let url=null;
   if(LAST.mode==='batch' && BATCH.meta){
@@ -700,9 +694,6 @@ function copyLink(){
   else prompt('Copy this link:', url);
 }
 
-/* ============================================================
-   Run flow
-   ============================================================ */
 async function runBatch(gid){
   $('status').textContent='Listing web maps in group...';
   const maps=await fetchGroupMaps(gid);
@@ -741,7 +732,6 @@ $('toggle').onclick=()=>{ document.body.classList.toggle('showall'); $('toggle')
 $('csvbtn').onclick=downloadCSV;
 $('linkbtn').onclick=copyLink;
 
-/* ---------- boot: deep-link params ---------- */
 (function boot(){
   const P=new URLSearchParams(location.search);
   const runFlag=(P.get('run')||'').toLowerCase();
