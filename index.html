@@ -116,6 +116,10 @@ details.about summary{cursor:pointer;font-weight:600;color:var(--ink-2)}
 details.about table{border-collapse:collapse;margin-top:8px;font-size:12px}
 details.about th,details.about td{text-align:left;padding:4px 12px 4px 0;border-bottom:1px solid var(--line);vertical-align:top}
 details.about td.v{font-family:var(--mono)}
+#rstage{margin:0 0 14px}
+.rs-cap{font-size:13px;color:var(--ink-2);margin-bottom:6px}
+.rs-wrap{width:360px;height:225px;overflow:hidden;border:1px solid var(--line);border-radius:6px;background:#fff;position:relative}
+.rs-view{width:1024px;height:640px;transform:scale(0.3515625);transform-origin:0 0}
 .credit{position:fixed;right:12px;bottom:12px;background:var(--card);border:1px solid var(--line);border-radius:6px;padding:5px 10px;font-size:12px;color:var(--ink-2);z-index:40}
 @media print{.credit{display:none}}
 table.batch th.sortable:focus-visible,table.batch tbody tr:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
@@ -135,9 +139,10 @@ table.batch th.sortable:focus-visible,table.batch tbody tr:focus-visible{outline
     <button id="csvbtn" class="secondary" disabled>Download CSV</button>
     <button id="linkbtn" class="secondary" disabled>Copy link</button>
   </div>
-  <label class="opt"><input type="checkbox" id="renderOn" checked> Render the map and check the pixels (loads the ArcGIS Maps SDK; adds several seconds per map, so untick for large batches)</label>
+  <label class="opt"><input type="checkbox" id="renderOn" checked> Render the map and check the pixels (loads the ArcGIS Maps SDK; adds 10-30 seconds per map and needs this tab in front while it runs, so untick for large batches)</label>
   <p class="hint">Public items only. Paste an item ID (<code>a1b2&hellip;</code>), an <code>arcgis.com/home/item.html?id=&hellip;</code> URL, a viewer URL with <code>webmap=</code>, or a group ID to audit every public web map in the group. Deep-link for ArcGIS Hub: <code>?group=&lt;id&gt;&amp;run=1</code>, <code>?id=&lt;id&gt;&amp;run=1</code>, or <code>?ids=a,b,c&amp;run=1</code>.</p>
   <div id="status" role="status" aria-live="polite"></div>
+  <div id="rstage" hidden><div class="rs-cap">Rendering the map for the pixel checks. Keep this browser tab in front until it finishes.</div><div class="rs-wrap"><div id="rsview" class="rs-view"></div></div></div>
   <div id="out"></div>
 </main>
 <footer>
@@ -159,7 +164,7 @@ const RUBRIC = {
     popupFieldsManySoft: 8, effectsLayersSoft: 2, fontsMax: 2, propSymbolMinRatio: 2,
     globalScaleMinWidthDeg: 200, deltaEMin: 12, deltaEMinCVD: 10,
     pointSymbolMinPx: 6, lineMinPx: 1, labelFontMinPt: 10, opacityMin: 0.3,
-    renderWidth: 1024, renderHeight: 640, renderSettleMs: 600, renderTimeoutMs: 25000,
+    renderWidth: 1024, renderHeight: 640, renderPollMs: 700, stablePolls: 3, stableDiff: 0.6, blankWaitMs: 8000, renderTimeoutMs: 20000,
     pixelStep: 2, diffPixelThreshold: 10, coverageMin: 0.02, contrastMinPixels: 400, renderContrastMin: 12
   },
   metadataFieldPattern: /^(objectid|fid|globalid|shape(_|\.)?(length|area|leng|len|starea|stlength)?|shape__?(length|area)|created_(user|date)|last_edited_(user|date)|editdate|creator|editor)$/i,
@@ -217,13 +222,13 @@ const RUBRIC = {
    data handling changes, and the app version on every release.
    Version tracking began at app 0.8.0 (earlier builds carried only the rubric version).
    ============================================================ */
-const APP = { version: "0.8.0", sdk: "4.31", advisoryModel: "claude-sonnet-5-5" };
+const APP = { version: "0.8.1", sdk: "4.31", advisoryModel: "claude-sonnet-5-5" };
 const MODELS = {
   "score roll-up":            {v:"1.0", note:"Weighted roll-up of check results (fail x3, warn x1, info not scored) to a 0-100 score and letter grade."},
   "pop-up classifier":        {v:"1.0", note:"Classifies how a pop-up is authored (Arcade, elements, media, description, fields, default)."},
   "colour screening":         {v:"1.0", note:"CIEDE2000 colour difference plus Machado, Oliveira & Fernandes (2009) colour-vision-deficiency simulation."},
-  "render: data coverage":    {v:"1.0", note:"Share of the viewport where data layers change the pixels, from a full and a basemap-only screenshot at the saved extent."},
-  "render: basemap contrast": {v:"1.0", note:"Median CIEDE2000 difference between each drawn data pixel and the basemap pixel beneath it."},
+  "render: data coverage":    {v:"1.1", note:"Share of the viewport where data layers change the pixels, from a full and a basemap-only screenshot at the saved extent. 1.1: waits for the drawing to settle by screenshot stability, and skips instead of scoring a blank render."},
+  "render: basemap contrast": {v:"1.1", note:"Median CIEDE2000 difference between each drawn data pixel and the basemap pixel beneath it."},
   "reviewer's read prompt":   {v:"1.0", note:"Prompt for the opt-in AI reviewer's read; opinion only, not scored."}
 };
 const MODEL_VERSIONS = Object.fromEntries(Object.entries(MODELS).map(([k,m])=>[k,m.v]));
@@ -634,35 +639,51 @@ function imageDataToJpeg(img, maxW){
   const ctx=o.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,o.width,o.height); ctx.drawImage(c,0,0,o.width,o.height);
   return o.toDataURL('image/jpeg',0.82);
 }
+// Screenshot-stability helpers. view.updating never settles for some maps, so
+// "done drawing" is judged from the pixels themselves.
+function sigOf(img){ const d=img.data, n=d.length/4, step=Math.max(1,Math.floor(n/2000)); const out=[]; for(let p=0;p<n;p+=step){ const i=p*4; out.push(d[i],d[i+1],d[i+2]); } return out; }
+function sigDiff(a,b){ if(!a||!b||a.length!==b.length) return Infinity; let t=0; for(let i=0;i<a.length;i++) t+=Math.abs(a[i]-b[i]); return t/a.length; }
+function sigBlank(a){ for(let i=3;i<a.length;i++) if(Math.abs(a[i]-a[i%3])>6) return false; return true; }
+async function waitForDraw(view, T){
+  const t0=Date.now(); let prev=null, stable=0, blank=true;
+  while(Date.now()-t0<T.renderTimeoutMs){
+    await sleep(T.renderPollMs);
+    const shot=await view.takeScreenshot({format:'png', width:256, height:160}); const sig=sigOf(shot.data);
+    blank=sigBlank(sig);
+    stable = (prev && sigDiff(prev,sig)<T.stableDiff) ? stable+1 : 0;
+    prev=sig;
+    // a blank frame is only accepted as final after blankWaitMs, in case the first tiles are slow
+    if(stable>=T.stablePolls && (!blank || Date.now()-t0>=T.blankWaitMs)) return {settled:true, blank, ms:Date.now()-t0};
+  }
+  return {settled:false, blank, ms:Date.now()-t0};
+}
 async function renderMap(itemId, T, onProgress){
   const t0=Date.now(); onProgress && onProgress('Loading the Maps SDK...');
-  const {config,WebMap,MapView,reactiveUtils}=await loadSDK();
+  const {config,WebMap,MapView}=await loadSDK();
   config.request.useIdentity=false;   // never pop a sign-in dialog for a private layer
-  const box=document.createElement('div'); box.setAttribute('aria-hidden','true');
-  box.style.cssText='position:fixed;left:-20000px;top:0;width:'+T.renderWidth+'px;height:'+T.renderHeight+'px;pointer-events:none';
-  document.body.appendChild(box);
-  let view=null, timedOut=false;
+  const stage=$('rstage'), host=$('rsview'); stage.hidden=false;
+  let view=null;
   try{
     const webmap=new WebMap({portalItem:{id:itemId}});
-    view=new MapView({container:box, map:webmap, popupEnabled:false, ui:{components:[]}});
-    onProgress && onProgress('Rendering the map at its saved extent...');
-    await view.when();
-    const idle=async()=>{ for(let i=0;i<2;i++){ await sleep(T.renderSettleMs); await Promise.race([reactiveUtils.whenOnce(()=>!view.updating), sleep(T.renderTimeoutMs).then(()=>{ timedOut=true; })]); } };
-    await idle();
+    view=new MapView({container:host, map:webmap, popupEnabled:false, ui:{components:[]}});
+    onProgress && onProgress('Rendering the map at its saved extent (keep this tab in front)...');
+    await Promise.race([view.when(), sleep(T.renderTimeoutMs).then(()=>{ throw new Error('the map did not load within '+(T.renderTimeoutMs/1000)+' s'); })]);
+    const w1=await waitForDraw(view,T);
+    if(w1.blank) throw new Error('the map did not draw anything - keep this browser tab in front while it renders, then audit again');
     const failed=[], suspended=[];
     webmap.allLayers.forEach(l=>{ if(l.loadStatus==='failed') failed.push(l.title||l.id); });
     view.allLayerViews.forEach(lv=>{ const l=lv.layer; if(l && l.type!=='group' && l.visible && lv.suspended && l.loadStatus!=='failed') suspended.push(l.title||l.id); });
     const full=await view.takeScreenshot({format:'png'});
     onProgress && onProgress('Rendering the basemap alone...');
     webmap.layers.forEach(l=>{ l.visible=false; });
-    await idle();
+    const w2=await waitForDraw(view,T);
     const base=await view.takeScreenshot({format:'png'});
     const analysis=analyzePixels(full.data, base.data, T);
     if(!analysis) throw new Error('the two screenshots were different sizes');
-    return {analysis, jpeg:imageDataToJpeg(full.data, 800), width:full.data.width, height:full.data.height, failed, suspended, timedOut, ms:Date.now()-t0};
+    return {analysis, jpeg:imageDataToJpeg(full.data, 800), width:full.data.width, height:full.data.height, failed, suspended, timedOut:!(w1.settled&&w2.settled), ms:Date.now()-t0};
   } finally {
     try{ view && view.destroy(); }catch(e){}
-    box.remove();
+    host.innerHTML=''; stage.hidden=true;
   }
 }
 async function renderStage(res, itemId, onProgress){
@@ -671,7 +692,7 @@ async function renderStage(res, itemId, onProgress){
   try{ r=await renderMap(itemId, T, onProgress); }
   catch(e){ const msg=(e&&e.message)||String(e); ids.forEach(id=>set(res,id,'skip','Not assessed - the map could not be rendered here: '+msg)); return null; }
   const A=r.analysis, pct=(A.coverage*100).toFixed(1)+'%';
-  const common=['viewport '+r.width+' x '+r.height+' px, '+A.sampled+' pixels sampled (every '+T.pixelStep+'nd), '+A.dataPixels+' differ from the basemap alone','render time '+(r.ms/1000).toFixed(1)+' s'].concat(r.timedOut?['render did not settle within '+(T.renderTimeoutMs/1000)+' s - results may be partial']:[]);
+  const common=['viewport '+r.width+' x '+r.height+' px, '+A.sampled+' pixels sampled (every '+T.pixelStep+'nd), '+A.dataPixels+' differ from the basemap alone','render time '+(r.ms/1000).toFixed(1)+' s'].concat(r.timedOut?['drawing was still changing after '+(T.renderTimeoutMs/1000)+' s - results may be partial']:[]);
   if(A.coverage<T.coverageMin) set(res,'render.coverage','warn','Data layers change only '+pct+' of the viewport at the saved extent.',['data coverage: '+pct+' (guideline >= '+(T.coverageMin*100)+'%)'].concat(common));
   else set(res,'render.coverage','pass','Data layers cover '+pct+' of the viewport at the saved extent.',['data coverage: '+pct].concat(common));
   if(A.dataPixels<T.contrastMinPixels/ (T.pixelStep*T.pixelStep) ) set(res,'render.contrast','skip','Not assessed - too little data is drawn at the saved extent to judge contrast.',['data pixels sampled: '+A.dataPixels]);
