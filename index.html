@@ -151,7 +151,7 @@ table.batch th.sortable:focus-visible,table.batch tbody tr:focus-visible{outline
    severity: fail = publishing requirement | warn = guideline heuristic | info = advisory
    ============================================================ */
 const RUBRIC = {
-  version: "0.9.0",
+  version: "0.10.0",
   standardsRef: "General Cartographic Standards for MapMaker",
   thresholds: {
     titleMax: 60, descriptionMin: 100, tagsMin: 3, layersMaxSoft: 15,
@@ -167,6 +167,8 @@ const RUBRIC = {
   abbrevAllow: /^(GDP|GNP|CO2|USA|UK|EU|UN|NASA|NOAA|WHO|GIS|HIV|AIDS|UV|3D|2D|ID)$/i,
   workingTitlePattern: /\b(draft|test|copy|wip|temp|untitled)\b/i,
   workingWordPattern: /^(draft|final|test|copy|wip|temp|new|old|beta)$/i,
+  citationPattern: /(https?:\/\/|www\.)|\b(sources?|data\s+(from|by|provided|courtesy|set)|datasets?|courtesy|adapted from|based on|derived from|compiled (by|from)|census|survey|usgs|noaa|nasa|esri|natural earth|openstreetmap|osm|nps|national park service|library of congress|gbif|iucn|world bank|united nations)\b|\b(1[5-9]\d\d|20\d\d)\b/i,
+  explainsColourPattern: /(each|every)\s+(colou?r|symbol|dot|line|marker|point|track)s?\b|colou?rs?\s+(represent|show|stand|indicate|mean|identif)|one\s+(colou?r|symbol|line)\s+per|\bindividual\b/i,
   serviceNamePattern: /^[A-Za-z0-9]+(_[A-Za-z0-9]+)+$/,
   referenceLayerPattern: /(parallels and meridians|degree grid|graticule|latitude|longitude|reference labels?|place labels?|\blabels?\b|hillshade|terrain|basemap|reference layer|boundaries reference|ocean\b|land\b|water labels|global background|country labels|city labels|sketch|annotation)/i,
   checks: {
@@ -177,6 +179,8 @@ const RUBRIC = {
     "meta.description":     {section:"Map title & metadata", severity:"warn", provisional:true, name:"Description present and substantive", guide:"Description should explain the map, its data, and any alternate projection."},
     "meta.tags":            {section:"Map title & metadata", severity:"warn", provisional:true, name:"Tags", guide:"Tags support discovery in the MapMaker gallery."},
     "meta.credits":         {section:"Map title & metadata", severity:"fail", provisional:true, name:"Credits / attribution", guide:"Data sources must be credited (item Credits field)."},
+    "meta.citation":        {section:"Map title & metadata", severity:"warn", provisional:true, name:"Data source cited", guide:"Credits should name the data, not only who made the map: give the source, dataset or year, ideally with a link, in the Credits field or the description."},
+    "meta.category":        {section:"Map title & metadata", severity:"warn", provisional:true, name:"Category assigned", guide:"Items need a category so they are filed correctly in the gallery."},
     "meta.license":         {section:"Map title & metadata", severity:"fail", name:"Terms of use", guide:"Set terms of use so schools know how the map may be used."},
     "meta.thumbnail":       {section:"Map title & metadata", severity:"warn", provisional:true, name:"Custom thumbnail", guide:"Default thumbnails look unfinished in the gallery."},
     "extent.initial":       {section:"Extent & scale", severity:"warn", name:"Initial extent set and appropriate", guide:"Set initial extent to appropriate scale and focus area - a city map should not start at a global scale."},
@@ -191,6 +195,7 @@ const RUBRIC = {
     "popup.configured":     {section:"Pop-ups", severity:"warn", name:"Pop-ups configured (not default all-fields)", guide:"Configure pop-ups so they are clear, well-labelled, and only contain relevant information. Authored pop-ups - including Arcade expressions, text/media elements, and curated field lists - count as configured. Raster layers identify pixel values by default and are exempt; reference/label layers are exempt. A default vector pop-up is a guideline warning, not a publishing blocker."},
     "popup.metafields":     {section:"Pop-ups", severity:"warn", name:"Metadata fields hidden", guide:"Hide unnecessary or metadata fields (OBJECTID, GlobalID, Shape_Length, edit tracking)."},
     "popup.aliases":        {section:"Pop-ups", severity:"warn", name:"Fields renamed to plain language", guide:"Rename data fields so they read in plain language rather than abstract codes or IDs."},
+    "popup.disabled":       {section:"Pop-ups", severity:"info", name:"Pop-ups switched off", guide:"Fine for backdrop layers. If a lesson or caption asks students to click a layer, its pop-up must be on. Pop-ups switched off in the layer's own item stay off in the map unless the map turns them on."},
     "popup.many":           {section:"Pop-ups", severity:"info", name:"Pop-up field count", guide:"Long pop-ups are hard to read on small screens - show only relevant fields."},
     "effects.sparingly":    {section:"Visual effects & labels", severity:"warn", name:"Effects used sparingly", guide:"Map effects should be used sparingly to assist visual hierarchy; overuse looks busy or 'shaky'."},
     "effects.recolour":     {section:"Visual effects & labels", severity:"warn", name:"No colour-altering effects", guide:"Beware effects that alter the colour of thematic data and are not reflected in the legend."},
@@ -207,6 +212,7 @@ const RUBRIC = {
     "sym.unique-distinct":  {section:"Symbology & legend", severity:"warn", name:"Categorical classes have distinct colours", guide:"Qualitative or categorical data should use classes with different hues.", link:"https://colorbrewer2.org/#type=qualitative", linkText:"ColorBrewer: qualitative schemes"},
     "sym.prop-size":        {section:"Symbology & legend", severity:"warn", name:"Proportional symbol sizes discernible", guide:"When using proportional symbols, ensure sizes are easily discernible."},
     "legend.labels":        {section:"Symbology & legend", severity:"fail", name:"Legend labels are readable and include units", guide:"Legend items should be clearly labelled and include units for quantitative data; avoid raw field names."},
+    "legend.entities":      {section:"Symbology & legend", severity:"warn", provisional:true, name:"Colours that identify individuals are explained", guide:"When each colour is one named individual (one layer per animal, person or place), the legend or description should say so, for example \"Each colour is one collared bear\". A custom legend image cannot be read by this checker."},
     "sym.diverging-note":   {section:"Symbology & legend", severity:"info", name:"Diverging ramp pivot explained", guide:"If a diverging scheme is used, explain the value at the divergence in the legend or description."},
     "render.coverage":      {section:"Rendered map", severity:"warn", name:"Data visible at the saved extent", guide:"The map is drawn at its saved initial extent and compared with the basemap alone. If almost nothing differs, students may open the map and see no data - check the initial extent and layer visibility ranges."},
     "render.contrast":      {section:"Rendered map", severity:"warn", name:"Data stands out from the basemap", guide:"Ensure the basemap's colours and elements complement the thematic data. Measured as the CIEDE2000 difference between each drawn data pixel and the basemap pixel beneath it - a heuristic; deliberately transparent layers score lower."},
@@ -218,17 +224,20 @@ const RUBRIC = {
    data handling changes, and the app version on every release.
    Version tracking began at app 0.8.0 (earlier builds carried only the rubric version).
    ============================================================ */
-const APP = { version: "0.9.0", sdk: "4.31" };
+const APP = { version: "0.10.0", sdk: "4.31" };
 const MODELS = {
   "score roll-up":            {v:"1.0", note:"Weighted roll-up of check results (fail x3, warn x1, info not scored) to a 0-100 score and letter grade."},
-  "pop-up classifier":        {v:"1.0", note:"Classifies how a pop-up is authored (Arcade, elements, media, description, fields, default)."},
-  "colour screening":         {v:"1.0", note:"CIEDE2000 colour difference plus Machado, Oliveira & Fernandes (2009) colour-vision-deficiency simulation."},
+  "pop-up classifier":        {v:"1.1", note:"Classifies how a pop-up is authored (Arcade, elements, media, description, fields, default). 1.1: counts a field as shown only when the pop-up displays it (a fields table), so written-text pop-ups no longer raise field-name warnings; reports pop-ups switched off."},
+  "colour screening":         {v:"1.1", note:"CIEDE2000 colour difference plus Machado, Oliveira & Fernandes (2009) colour-vision-deficiency simulation. 1.1: classes that differ in line style, marker shape or size are not judged on colour alone."},
+  "layer item merge":         {v:"1.0", note:"Where the web map does not set them, reads pop-up, symbols, labels and visibility range from each layer's own item (the web map overrides the item). If an item cannot be read the web map alone is used."},
+  "citation screening":       {v:"1.0", note:"Keyword screen for a data citation (a link, the words source or data from, a known data provider, or a year) in the credits or description. A heuristic."},
+  "split-layer detection":    {v:"1.0", note:"Finds three or more layers that come from one service and differ only by a filter, so colour means which one rather than a data value."},
   "effects screening":       {v:"1.0", note:"Ignores near-neutral effect values (brightness, contrast, saturate within 15% of 1; hue shifts under 10 degrees) so only effects that visibly change the map are counted or flagged."},
   "render: data coverage":    {v:"1.1", note:"Share of the viewport where data layers change the pixels, from a full and a basemap-only screenshot at the saved extent. 1.1: waits for the drawing to settle by screenshot stability, and skips instead of scoring a blank render."},
   "render: basemap contrast": {v:"1.1", note:"Median CIEDE2000 difference between each drawn data pixel and the basemap pixel beneath it."},
 };
 const MODEL_VERSIONS = Object.fromEntries(Object.entries(MODELS).map(([k,m])=>[k,m.v]));
-const SECTION_MODELS = {"Pop-ups":["pop-up classifier"], "Accessibility":["colour screening"], "Rendered map":["render: data coverage","render: basemap contrast"], "Visual effects & labels":["effects screening"]};
+const SECTION_MODELS = {"Map title & metadata":["citation screening"], "Layers":["layer item merge"], "Symbology & legend":["split-layer detection"], "Pop-ups":["pop-up classifier","layer item merge"], "Accessibility":["colour screening"], "Rendered map":["render: data coverage","render: basemap contrast"], "Visual effects & labels":["effects screening"]};
 function modelTag(name){ return name+' v'+MODELS[name].v; }
 function modelTags(section){ return (SECTION_MODELS[section]||[]).map(n=>'<span class="vtag">'+modelTag(n)+'</span>').join(''); }
 document.getElementById('ver').textContent = 'app v' + APP.version + ' · rubric v' + RUBRIC.version;
@@ -347,10 +356,13 @@ const CVD_MATRICES={
   tritanopia:  [[1.255528,-0.076749,-0.178779],[-0.078411,0.930809,0.147602],[0.004733,0.691367,0.303900]]
 };
 function simulateCVD(rgb,type){ const m=CVD_MATRICES[type]; const lin=rgb.map(srgb2lin); return m.map(row=>lin2srgb(row[0]*lin[0]+row[1]*lin[1]+row[2]*lin[2])); }
-function minPairDeltaE(cols,adjacentOnly){
-  const labs=cols.map(rgb2lab); let min=Infinity, pair=null;
-  for(let i=0;i<labs.length;i++){ for(let j=i+1;j<labs.length;j++){ if(adjacentOnly && j!==i+1) continue; const d=deltaE2000(labs[i],labs[j]); if(d<min){min=d;pair=[i+1,j+1];} } }
-  return {min,pair};
+function minPairDeltaE(cols,adjacentOnly,sigs){
+  const labs=cols.map(rgb2lab); let min=Infinity, pair=null, byStyle=0;
+  for(let i=0;i<labs.length;i++){ for(let j=i+1;j<labs.length;j++){ if(adjacentOnly && j!==i+1) continue;
+    const d=deltaE2000(labs[i],labs[j]);
+    if(sigs && sigs[i]!==sigs[j]){ if(d<8) byStyle++; continue; }   // told apart by line style, shape or size
+    if(d<min){min=d;pair=[i+1,j+1];} } }
+  return {min,pair,byStyle};
 }
 function rgbHex(c){ return '#'+c.map(v=>Math.round(v).toString(16).padStart(2,'0')).join(''); }
 function isRasterLayer(l){ return /Image|Raster|WMS|WMTS|TiledImageService/i.test(l.layerType||''); }
@@ -397,6 +409,46 @@ function popupKind(pi){
   if(fi.length) return 'default';
   return 'default';
 }
+// Fields a pop-up actually displays. A fields table only exists in a fields element (modern pop-ups) or,
+// in classic pop-ups, when there is no description. Written text, media and Arcade only interpolate values.
+function shownFields(pi){
+  if(!pi) return [];
+  const els=pi.popupElements||[]; const top=pi.fieldInfos||[];
+  const fe=els.filter(e=>e && e.type==='fields');
+  if(fe.length) return fe.flatMap(e=>(e.fieldInfos||top).filter(f=>f.visible!==false));
+  if(els.length) return [];
+  if((pi.description||'').trim()) return /\{\*\}/.test(pi.description) ? top.filter(f=>f.visible!==false) : [];
+  return top.filter(f=>f.visible!==false);
+}
+// Symbol signature for "distinguishable without colour": line style/width, marker shape/size, fill pattern.
+function symSig(sy){
+  if(!sy) return '';
+  const t=sy.type||'';
+  if(t==='esriSLS') return 'L|'+(sy.style||'')+'|'+((sy.width||1)<1.5?'t':(sy.width||1)<3?'m':'h');
+  if(t==='esriSMS') return 'M|'+(sy.style||'')+'|'+((sy.size||8)<8?'s':(sy.size||8)<14?'m':'l');
+  if(t==='esriSFS') return 'F|'+(sy.style||'');
+  if(t==='esriPMS'||t==='esriPFS') return 'P|'+(sy.url||sy.imageData||'').slice(0,40);
+  return t;
+}
+// Where the web map does not set them, take settings from each layer's own item. The web map overrides the item.
+async function enrichFromItems(layers){
+  const cache={};
+  const get=id=>cache[id]||(cache[id]=getJSON(PORTAL+'/content/items/'+id+'/data?f=json').catch(()=>null));
+  await mapLimit(layers.filter(l=>l.itemId && l.kind==='feature' && l.url),4, async l=>{
+    const data=await get(l.itemId); if(!data || !Array.isArray(data.layers)) return;
+    const idx=(l.url.match(/\/(\d+)(?:\?.*)?$/)||[])[1];
+    const m=data.layers.find(x=>String(x.id)===idx) || (data.layers.length===1?data.layers[0]:null); if(!m) return;
+    const md=m.layerDefinition||{}; const from=[];
+    if(!l.popupInfo && m.popupInfo){ l.popupInfo=m.popupInfo; from.push('pop-up'); }
+    if(l.disablePopup===undefined && m.disablePopup!==undefined){ l.disablePopup=m.disablePopup; if(m.disablePopup) from.push('pop-up off'); }
+    if(!l.renderer && md.drawingInfo && md.drawingInfo.renderer){ l.renderer=md.drawingInfo.renderer; from.push('symbols'); }
+    if(!(l.labelingInfo&&l.labelingInfo.length) && md.drawingInfo && md.drawingInfo.labelingInfo && m.showLabels!==false){ l.labelingInfo=md.drawingInfo.labelingInfo; from.push('labels'); }
+    if(!l.geometryType && md.geometryType) l.geometryType=md.geometryType;
+    if(!l.definitionExpression && md.definitionExpression) l.definitionExpression=md.definitionExpression;
+    if(!(l.minScale||l.maxScale) && (md.minScale||md.maxScale)){ l.minScale=md.minScale; l.maxScale=md.maxScale; from.push('visibility range'); }
+    if(from.length) l.fromItem=from;
+  });
+}
 // Authored = anything a person deliberately set up (Arcade included). Not a fail.
 function popupIsAuthored(kind){ return ['arcade','elements','media','description','fields'].includes(kind); }
 
@@ -413,6 +465,8 @@ async function audit(itemId, onProgress, opts){
   if(item.type!=='Web Map') throw new Error('Item is a ' + item.type + ', not a Web Map');
   const data = await fetchData(itemId);
   const layers = (data.operationalLayers||[]).flatMap(flattenLayer);
+  onProgress && onProgress('Reading layer items...');
+  await enrichFromItems(layers);
   const title=(item.title||'').trim();
   if(!title || /^untitled/i.test(title) || /^map\d*$/i.test(title)) set(res,'meta.title.present','fail','Title missing or default.','title: "'+title+'"');
   else if(RUBRIC.workingTitlePattern.test(title)) set(res,'meta.title.present','warn','Title contains the working word "'+title.match(RUBRIC.workingTitlePattern)[0]+'" - remove it before publishing.','title: "'+title+'"');
@@ -432,7 +486,13 @@ async function audit(itemId, onProgress, opts){
   else note(res,'meta.description','description: '+desc.length+' chars');
   const tags=(item.tags||[]).filter(t=>String(t).trim());
   if(tags.length<T.tagsMin) set(res,'meta.tags','warn',tags.length+' tag(s); guideline >= '+T.tagsMin+'.','tags: '+(tags.join(', ')||'none')); else note(res,'meta.tags','tags: '+tags.join(', '));
-  if(!(item.accessInformation||'').trim()) set(res,'meta.credits','fail','Credits (attribution) field is empty.','accessInformation: empty'); else note(res,'meta.credits','credits: '+item.accessInformation);
+  const credits=stripHtml(item.accessInformation||'').trim();
+  if(!credits) set(res,'meta.credits','fail','Credits (attribution) field is empty.','accessInformation: empty'); else note(res,'meta.credits','credits: '+credits);
+  if(!credits) set(res,'meta.citation','skip','Not assessed - the Credits field is empty (see Credits / attribution).');
+  else if(RUBRIC.citationPattern.test(credits)||RUBRIC.citationPattern.test(desc)) note(res,'meta.citation','credits: '+credits);
+  else set(res,'meta.citation','warn','Credits name who made the map but do not cite the data (no source, dataset, provider or year).',['credits: '+credits,'Add the data source to Credits, for example "Data: <provider>, <year>", with a link where there is one.']);
+  const cats=(item.categories||[]).filter(Boolean);
+  if(!cats.length) set(res,'meta.category','warn','No category assigned.','categories: none'); else note(res,'meta.category','categories: '+cats.map(c=>String(c).replace(/^\/Categories\//,'')).join(', '));
   if(!stripHtml(item.licenseInfo||'').trim()) set(res,'meta.license','fail','No terms of use set.','licenseInfo: empty'); else note(res,'meta.license','licenseInfo: set');
   if(!item.thumbnail) set(res,'meta.thumbnail','warn','No custom thumbnail - the default will show in galleries.','thumbnail: none'); else if(/ago_downloaded|thumbnail\.(png|jpe?g)$/i.test(item.thumbnail)) set(res,'meta.thumbnail','info','Thumbnail appears to be the auto-generated map capture - consider a designed thumbnail for the gallery.','thumbnail: '+item.thumbnail); else note(res,'meta.thumbnail','thumbnail: '+item.thumbnail);
   const vp = data.initialState && data.initialState.viewpoint;
@@ -488,21 +548,21 @@ async function audit(itemId, onProgress, opts){
   else if(noRenderer.length) set(res,'layer.renderer','info',noRenderer.length+' of '+styleable.length+' feature layer(s) use service default symbology.',noRenderer.map(l=>l.title));
   else note(res,'layer.renderer','all '+styleable.length+' feature layer(s) have a renderer defined in the map');
   // ---- Popups (v0.7.1: Arcade & element aware, with popup_kind evidence) ----
-  const noPopup=[], metaVisible=[], codeAliases=[], manyFields=[], kinds=[]; let assessable=0;
+  const noPopup=[], metaVisible=[], codeAliases=[], manyFields=[], kinds=[], offPopups=[]; let assessable=0;
   layers.forEach((l,i)=>{
-    if(l.disablePopup){ kinds.push(l.title+': disabled'); return; }
+    if(l.disablePopup){ kinds.push(l.title+': disabled'); if(l.kind==='feature' && !isReferenceLayer(l)) offPopups.push(l.title+(l.fromItem&&l.fromItem.includes('pop-up off')?' (switched off in the layer\'s item)':' (switched off in the map)')); return; }
     if(isReferenceLayer(l)){ kinds.push(l.title+': reference (exempt)'); return; }
     if(isRasterLayer(l)){ assessable++; kinds.push(l.title+': raster (pixel identify)'); return; }
     if(l.kind!=='feature'){ kinds.push(l.title+': '+(l.layerType||'other')+' (exempt)'); return; }
     assessable++;
     const kind = popupKind(l.popupInfo);
-    kinds.push(l.title+': '+kind);
+    kinds.push(l.title+': '+kind+(l.fromItem&&l.fromItem.includes('pop-up')?' (from the layer\'s item)':''));
     const svcFields = probes[i].info && probes[i].info.fields ? probes[i].info.fields : (l.fields||[]);
     if(kind==='none'){ noPopup.push(l.title+' (no pop-up; '+(svcFields.length||'?')+' fields would show by default)'); return; }
     if(kind==='default'){ noPopup.push(l.title+' (default all-fields pop-up, no title/description/expression)'); return; }
     // kind is authored (arcade/elements/media/description/fields) -> configured.
     // Still run *quality* sub-checks on any visible fieldInfos (Arcade pop-ups can still leak junk fields).
-    const fi=(l.popupInfo.fieldInfos||[]).filter(f=>f.visible!==false);
+    const fi=shownFields(l.popupInfo);
     const meta=fi.filter(f=>RUBRIC.metadataFieldPattern.test(f.fieldName));
     if(meta.length) metaVisible.push(l.title+': '+meta.map(f=>f.fieldName).join(', '));
     const codes=fi.filter(f=>{ const raw=f.fieldName||''; const svcAlias=(svcFields.find(s=>s.name===raw)||{}).alias; const eff = f.label||svcAlias||raw; return eff===raw && RUBRIC.codeLikeFieldPattern.test(raw) && !RUBRIC.metadataFieldPattern.test(raw); });
@@ -512,6 +572,7 @@ async function audit(itemId, onProgress, opts){
   if(!assessable) set(res,'popup.configured','skip','No data layers require a pop-up (map is raster-only reference or all layers exempt).', kinds);
   else if(noPopup.length) set(res,'popup.configured','warn',noPopup.length+' of '+assessable+' data layer(s) show a default or missing pop-up.',noPopup.concat(['--- pop-up kinds ---'], kinds));
   else set(res,'popup.configured','pass','All '+assessable+' data layer(s) have an authored pop-up (Arcade / elements / fields / media / raster identify).', kinds);
+  if(offPopups.length) set(res,'popup.disabled','info','Pop-ups are off for '+offPopups.length+' data layer(s).',offPopups.concat(['Fine for backdrop layers. If the lesson asks students to click one, switch its pop-up on.'])); else note(res,'popup.disabled','no data layer has its pop-up switched off');
   const anyPopupCfg = layers.some(l=>l.kind==='feature' && l.popupInfo && !l.disablePopup && !isReferenceLayer(l));
   if(!anyPopupCfg){ set(res,'popup.metafields','skip','Not assessed - no vector pop-up configuration to check.'); set(res,'popup.aliases','skip','Not assessed - no vector pop-up configuration to check.'); set(res,'popup.many','skip','Not assessed - no vector pop-up configuration to check.'); }
   else {
@@ -529,7 +590,7 @@ async function audit(itemId, onProgress, opts){
   layers.forEach(l=>{ (l.labelingInfo||[]).forEach(li=>{ const s=li.symbol||{}; const f=(s.font&&s.font.family)||(s.symbolLayers&&s.symbolLayers[0]&&s.symbolLayers[0].font&&s.symbolLayers[0].font.family); if(f) fonts.add(f); const halo = s.haloSize>0 || (s.symbolLayers&&s.symbolLayers.some(sl=>sl.halo)); if(!halo) noHalo.push(l.title+': '+(f||'default font')); }); });
   if(fonts.size>T.fontsMax) set(res,'fonts.max','warn',fonts.size+' label fonts in use.',[...fonts]); else note(res,'fonts.max',fonts.size?[...fonts]:'no map labels');
   if(noHalo.length) set(res,'labels.halo','info',noHalo.length+' label class(es) without a halo.',noHalo); else note(res,'labels.halo','all label classes have halos');
-  const cntChoro=[], rampBad=[], uniqDup=[], propBad=[], legendBad=[], divergingUsed=[], colourOnly=[], a11yColours=[], smallSym=[], smallLabel=[], lowOpacity=[], unreadable=[]; let classRenderers=0;
+  const cntChoro=[], rampBad=[], uniqDup=[], propBad=[], legendBad=[], divergingUsed=[], colourOnly=[], byStyleNotes=[], a11yColours=[], smallSym=[], smallLabel=[], lowOpacity=[], unreadable=[]; let classRenderers=0;
   layers.forEach(l=>{
     if(typeof l.opacity==='number' && l.opacity<T.opacityMin) lowOpacity.push(l.title+': opacity '+l.opacity);
     (l.labelingInfo||[]).forEach(li=>{ const s=li.symbol||{}; const sz=(s.font&&s.font.size)||(s.symbolLayers&&s.symbolLayers[0]&&s.symbolLayers[0].size); if(sz && sz<T.labelFontMinPt) smallLabel.push(l.title+': '+sz+'pt'); });
@@ -549,7 +610,8 @@ async function audit(itemId, onProgress, opts){
       classRenderers++;
       const cols=(r.classBreakInfos||[]).map(ci=>rgbOf(ci.symbol)).filter(Boolean);
       if(cols.length<(r.classBreakInfos||[]).length) unreadable.push(l.title+': '+((r.classBreakInfos||[]).length-cols.length)+' of '+(r.classBreakInfos||[]).length+' class symbols have no readable colour');
-      if(cols.length>=2) a11yColours.push({title:l.title, cols, adjacentOnly:true});
+      const sigsCB=(r.classBreakInfos||[]).map(ci=>rgbOf(ci.symbol)?symSig(ci.symbol):null).filter(x=>x!==null);
+      if(cols.length>=2) a11yColours.push({title:l.title, cols, adjacentOnly:true, sigs:sigsCB});
       if(cols.length>=3){
         const L=cols.map(lum); const d=L.slice(1).map((v,i)=>v-L[i]);
         const mono = d.every(x=>x>=-.005)||d.every(x=>x<=.005);
@@ -567,9 +629,10 @@ async function audit(itemId, onProgress, opts){
       classRenderers++;
       const cols=(r.uniqueValueInfos||[]).map(ci=>rgbOf(ci.symbol)).filter(Boolean);
       if(cols.length<(r.uniqueValueInfos||[]).length) unreadable.push(l.title+': '+((r.uniqueValueInfos||[]).length-cols.length)+' of '+(r.uniqueValueInfos||[]).length+' class symbols have no readable colour');
-      if(cols.length>=2){ const {min,pair}=minPairDeltaE(cols,false); if(min<T.deltaEMin) uniqDup.push(l.title+': classes '+pair[0]+' and '+pair[1]+' dE '+min.toFixed(1)+' ('+rgbHex(cols[pair[0]-1])+' vs '+rgbHex(cols[pair[1]-1])+')'); }
+      const sigsUV=(r.uniqueValueInfos||[]).map(ci=>rgbOf(ci.symbol)?symSig(ci.symbol):null).filter(x=>x!==null);
+      if(cols.length>=2){ const {min,pair,byStyle}=minPairDeltaE(cols,false,sigsUV); if(byStyle) byStyleNotes.push(l.title+': '+byStyle+' pair(s) alike in colour but told apart by line style, shape or size'); if(min<T.deltaEMin) uniqDup.push(l.title+': classes '+pair[0]+' and '+pair[1]+' dE '+min.toFixed(1)+' ('+rgbHex(cols[pair[0]-1])+' vs '+rgbHex(cols[pair[1]-1])+')'); }
       if(cols.length>8) colourOnly.push(l.title+': '+cols.length+' categories');
-      a11yColours.push({title:l.title, cols, adjacentOnly:false});
+      a11yColours.push({title:l.title, cols, adjacentOnly:false, sigs:sigsUV});
       const f=[r.field1,r.field2,r.field3].filter(Boolean).join(',');
       if(legendOn && RUBRIC.codeLikeFieldPattern.test(f) && !(r.legendOptions&&r.legendOptions.title)) legendBad.push(l.title+': legend headed by raw field "'+f+'"');
     }
@@ -579,31 +642,41 @@ async function audit(itemId, onProgress, opts){
     });
   });
   const cvdBad=[], contrastBad=[];
-  a11yColours.forEach(({title,cols,adjacentOnly})=>{
-    const n=minPairDeltaE(cols,adjacentOnly); if(n.min<T.deltaEMin) contrastBad.push(title+': classes '+n.pair[0]+'/'+n.pair[1]+' dE '+n.min.toFixed(1)+' (normal vision)');
-    for(const type in CVD_MATRICES){ const sim=cols.map(c=>simulateCVD(c,type)); const m=minPairDeltaE(sim,adjacentOnly); if(m.min<T.deltaEMinCVD) cvdBad.push(title+': '+type+' - classes '+m.pair[0]+'/'+m.pair[1]+' dE '+m.min.toFixed(1)+' ('+rgbHex(cols[m.pair[0]-1])+' vs '+rgbHex(cols[m.pair[1]-1])+')'); }
+  a11yColours.forEach(({title,cols,adjacentOnly,sigs})=>{
+    const n=minPairDeltaE(cols,adjacentOnly,sigs); if(n.min<T.deltaEMin) contrastBad.push(title+': classes '+n.pair[0]+'/'+n.pair[1]+' dE '+n.min.toFixed(1)+' (normal vision)');
+    for(const type in CVD_MATRICES){ const sim=cols.map(c=>simulateCVD(c,type)); const m=minPairDeltaE(sim,adjacentOnly,sigs); if(m.min<T.deltaEMinCVD) cvdBad.push(title+': '+type+' - classes '+m.pair[0]+'/'+m.pair[1]+' dE '+m.min.toFixed(1)+' ('+rgbHex(cols[m.pair[0]-1])+' vs '+rgbHex(cols[m.pair[1]-1])+')'); }
   });
   const colourSkipMsg = classRenderers && !a11yColours.length ? 'Not assessed - class colours could not be read from the renderer (likely CIM or Arcade-driven symbols).' : null;
   if(cvdBad.length) set(res,'a11y.cvd','warn',new Set(cvdBad.map(x=>x.split(':')[0])).size+' layer(s) have classes that merge under colour-vision deficiency.',cvdBad);
   else if(colourSkipMsg) set(res,'a11y.cvd','skip',colourSkipMsg,unreadable);
   else if(!a11yColours.length) set(res,'a11y.cvd','skip','No classed feature renderers to assess (raster/single-symbol map).');
-  else note(res,'a11y.cvd',a11yColours.length+' renderer(s) checked under protan/deutan/tritan simulation (min dE >= '+T.deltaEMinCVD+')');
+  else note(res,'a11y.cvd',[a11yColours.length+' renderer(s) checked under protan/deutan/tritan simulation (min dE >= '+T.deltaEMinCVD+')'].concat(byStyleNotes));
   if(contrastBad.length) set(res,'a11y.contrast','warn',contrastBad.length+' renderer(s) with low contrast between classes.',contrastBad);
   else if(colourSkipMsg) set(res,'a11y.contrast','skip',colourSkipMsg,unreadable);
   else if(!a11yColours.length) set(res,'a11y.contrast','skip','No classed feature renderers to assess (raster/single-symbol map).');
-  else note(res,'a11y.contrast','all adjacent classes dE >= '+T.deltaEMin);
+  else note(res,'a11y.contrast',['all adjacent classes dE >= '+T.deltaEMin].concat(byStyleNotes));
   if(smallSym.length) set(res,'a11y.symbol-size','warn',new Set(smallSym).size+' small symbol size(s).',[...new Set(smallSym)]); else note(res,'a11y.symbol-size','symbol sizes OK');
   if(smallLabel.length) set(res,'a11y.label-size','warn',smallLabel.length+' label class(es) below '+T.labelFontMinPt+'pt.',smallLabel); else note(res,'a11y.label-size','label sizes OK / no labels');
   if(lowOpacity.length) set(res,'a11y.opacity','info',lowOpacity.length+' layer(s) very transparent.',lowOpacity); else note(res,'a11y.opacity','opacities OK');
   if(colourOnly.length) set(res,'a11y.colour-only','info','Large categorical palettes rely on hue alone.',colourOnly); else note(res,'a11y.colour-only','categorical class counts OK');
   if(cntChoro.length) set(res,'sym.count-choropleth','warn',cntChoro.length+' choropleth layer(s) appear to map raw counts.',cntChoro); else note(res,'sym.count-choropleth','no unnormalised count choropleths detected');
   if(rampBad.length) set(res,'sym.ramp-order','warn',rampBad.length+' ramp(s) do not read as sequential or diverging.',rampBad); else if(colourSkipMsg) set(res,'sym.ramp-order','skip',colourSkipMsg); else if(!classRenderers) set(res,'sym.ramp-order','skip','No class-break renderers in map.'); else note(res,'sym.ramp-order','class-break ramps read sequential/diverging');
-  if(uniqDup.length) set(res,'sym.unique-distinct','warn',uniqDup.length+' categorical layer(s) with near-identical class colours.',uniqDup); else if(colourSkipMsg) set(res,'sym.unique-distinct','skip',colourSkipMsg); else if(!classRenderers) set(res,'sym.unique-distinct','skip','No categorical renderers in map.'); else note(res,'sym.unique-distinct','categorical classes distinct');
+  if(uniqDup.length) set(res,'sym.unique-distinct','warn',uniqDup.length+' categorical layer(s) with near-identical class colours.',uniqDup); else if(colourSkipMsg) set(res,'sym.unique-distinct','skip',colourSkipMsg); else if(!classRenderers) set(res,'sym.unique-distinct','skip','No categorical renderers in map.'); else note(res,'sym.unique-distinct',['categorical classes distinct'].concat(byStyleNotes));
   if(propBad.length) set(res,'sym.prop-size','warn','Proportional symbol size range too narrow.',propBad); else note(res,'sym.prop-size','proportional symbol ranges OK / not used');
   const customLegend=layers.some(l=>l.layerType==='MediaLayer' && /legend|key/i.test(l.title||''));
   if(legendBad.length && customLegend) set(res,'legend.labels','info','This map uses a custom legend image, so the automatic legend check is only a hint ('+legendBad.length+' possible issue(s)). Check the legend by eye.',legendBad);
   else if(legendBad.length) set(res,'legend.labels','fail',legendBad.length+' legend issue(s).',legendBad); else if(!classRenderers) set(res,'legend.labels','skip','No classed renderers whose legend labels can be read (raster/single-symbol map).'); else note(res,'legend.labels','legend labels look readable');
   if(divergingUsed.length) set(res,'sym.diverging-note','info','Diverging ramp detected - confirm the pivot value is explained.',divergingUsed); else note(res,'sym.diverging-note','no diverging ramps');
+  const bySvc={}; layers.forEach(l=>{ if(l.kind==='feature' && l.url && l.definitionExpression) (bySvc[l.url]=bySvc[l.url]||[]).push(l); });
+  const splits=Object.values(bySvc).filter(g=>g.length>=3 && new Set(g.map(l=>l.definitionExpression)).size>=3);
+  if(!splits.length) note(res,'legend.entities','no run of layers split from one service by a filter');
+  else{
+    const lines=splits.map(g=>g.length+' layers from one service, each filtered to one value ('+g.slice(0,4).map(l=>l.title).join(', ')+(g.length>4?', ...':'')+')');
+    const explained=RUBRIC.explainsColourPattern.test(desc+' '+(item.snippet||''));
+    if(explained) note(res,'legend.entities',lines.concat(['The summary or description explains what each colour is.']));
+    else if(customLegend) set(res,'legend.entities','warn','Each colour stands for one individual, and the legend is a custom image this checker cannot read. Say in the description or legend what a colour means (for example "Each colour is one collared bear").',lines);
+    else set(res,'legend.entities','info','Each colour stands for one individual. The automatic legend lists the layer names; consider also saying in the description what a colour means.',lines);
+  }
   let render=null;
   if(opts && opts.render) render = await renderStage(res, itemId, onProgress);
   else ['render.coverage','render.contrast','render.layerviews'].forEach(id=>set(res,id,'skip','Not assessed - the render option was off for this run.'));
@@ -729,7 +802,7 @@ function flattenLayer(l){
   let kind='other';
   if(/Image|Raster|WMS|WMTS|TiledImageService/i.test(l.layerType||'')) kind='raster';
   else if(/Feature|CSV|GeoJSON|OGCFeature/i.test(l.layerType||'') || fc) kind='feature';
-  return [{title:l.title||l.id, url, kind, layerType:l.layerType, itemId:l.itemId, showLegend:l.showLegend, renderer, geometryType, fields, labelingInfo, popupInfo, disablePopup:l.disablePopup, minScale:l.minScale||ld.minScale, maxScale:l.maxScale||ld.maxScale, effect:l.effect, blendMode:l.blendMode, opacity:l.opacity}];
+  return [{title:l.title||l.id, url, kind, layerType:l.layerType, itemId:l.itemId, definitionExpression:ld.definitionExpression||l.definitionExpression, showLegend:l.showLegend, renderer, geometryType, fields, labelingInfo, popupInfo, disablePopup:l.disablePopup, minScale:l.minScale||ld.minScale, maxScale:l.maxScale||ld.maxScale, effect:l.effect, blendMode:l.blendMode, opacity:l.opacity}];
 }
 function effectList(e){
   const out=[];
@@ -780,7 +853,7 @@ function renderReport(a, target){
     const ids=sections[s].slice().sort((x,y)=>order[results[x].status]-order[results[y].status]);
     const nonpass=ids.filter(i=>results[i].status!=='pass'&&results[i].status!=='skip').length;
     const secScore = sc.sections[s]==null? '' : ' \u00b7 '+sc.sections[s].toFixed(0);
-    right+='<div class="card section"><h3><span>'+esc(s)+modelTags(s)+'</span><span class="count">'+(nonpass?nonpass+' to look at':'all pass')+secScore+'</span></h3>';
+    right+='<div class="card section"><h3><span>'+esc(s)+modelTags(s)+'</span><span class="count">'+(nonpass?nonpass+' to look at':(ids.every(i=>results[i].status==='skip')?'not assessed':'all pass'))+secScore+'</span></h3>';
     for(const id of ids){ const c=RUBRIC.checks[id], r=results[id];
       right+='<div class="check '+r.status+'" id="chk-'+id.replace(/\./g,'-')+'"><div class="st">'+r.status+'</div><div><div class="name">'+esc(c.name)+(c.provisional?'<span class="prov" title="Assumed publishing requirement - confirm against distributor checklist">provisional</span>':'')+'</div>'+(r.msg?'<div class="msg">'+esc(r.msg)+'</div>':'')+(r.evidence.length?'<div class="ev">'+r.evidence.filter(Boolean).map(e=>'<span>'+esc(e)+'</span>').join('')+'</div>':'')+'<div class="guide">'+esc(c.guide)+(c.link?' <a href="'+c.link+'" target="_blank" rel="noopener">'+esc(c.linkText||c.link)+'</a>':'')+'</div></div></div>';
     }
