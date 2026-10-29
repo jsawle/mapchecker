@@ -151,7 +151,7 @@ table.batch th.sortable:focus-visible,table.batch tbody tr:focus-visible{outline
    severity: fail = publishing requirement | warn = guideline heuristic | info = advisory
    ============================================================ */
 const RUBRIC = {
-  version: "0.10.0",
+  version: "0.11.0",
   standardsRef: "General Cartographic Standards for MapMaker",
   thresholds: {
     titleMax: 60, descriptionMin: 100, tagsMin: 3, layersMaxSoft: 15,
@@ -159,6 +159,7 @@ const RUBRIC = {
     globalScaleMinWidthDeg: 200, deltaEMin: 12, deltaEMinCVD: 10,
     pointSymbolMinPx: 6, lineMinPx: 1, labelFontMinPt: 10, opacityMin: 0.3,
     renderWidth: 1024, renderHeight: 640, renderPollMs: 700, stablePolls: 3, stableDiff: 0.6, blankWaitMs: 8000, renderTimeoutMs: 20000,
+    timeFeaturesSoft: 25000, timeLayersSoft: 4, timeRangeSlack: 0.25,
     pixelStep: 2, diffPixelThreshold: 10, coverageMin: 0.02, contrastMinPixels: 400, renderContrastMin: 12
   },
   metadataFieldPattern: /^(objectid|fid|globalid|shape(_|\.)?(length|area|leng|len|starea|stlength)?|shape__?(length|area)|created_(user|date)|last_edited_(user|date)|editdate|creator|editor)$/i,
@@ -169,6 +170,7 @@ const RUBRIC = {
   workingWordPattern: /^(draft|final|test|copy|wip|temp|new|old|beta)$/i,
   citationPattern: /(https?:\/\/|www\.)|\b(sources?|data\s+(from|by|provided|courtesy|set)|datasets?|courtesy|adapted from|based on|derived from|compiled (by|from)|census|survey|usgs|noaa|nasa|esri|natural earth|openstreetmap|osm|nps|national park service|library of congress|gbif|iucn|world bank|united nations)\b|\b(1[5-9]\d\d|20\d\d)\b/i,
   explainsColourPattern: /(each|every)\s+(colou?r|symbol|dot|line|marker|point|track)s?\b|colou?rs?\s+(represent|show|stand|indicate|mean|identif)|one\s+(colou?r|symbol|line)\s+per|\bindividual\b/i,
+  explainsTimePattern: /(time slider|slider|press play|play button|\banimat|over time|month by month|year by year|day by day|each (month|year|day|step)|timeline|(from|between)\s+\d{4}\s+(to|and)\s+\d{4})/i,
   serviceNamePattern: /^[A-Za-z0-9]+(_[A-Za-z0-9]+)+$/,
   referenceLayerPattern: /(parallels and meridians|degree grid|graticule|latitude|longitude|reference labels?|place labels?|\blabels?\b|hillshade|terrain|basemap|reference layer|boundaries reference|ocean\b|land\b|water labels|global background|country labels|city labels|sketch|annotation)/i,
   checks: {
@@ -192,6 +194,7 @@ const RUBRIC = {
     "layer.title":          {section:"Layers", severity:"warn", name:"Layer titles are plain language", guide:"Rename layers so they read in plain English (or the language of the map) rather than service names."},
     "layer.fields":         {section:"Layers", severity:"info", name:"Layer field count", guide:"Layers with very many fields are slow to load and hard to configure - consider publishing a view with only the fields the map needs."},
     "layer.renderer":       {section:"Layers", severity:"info", name:"Symbology set in the map", guide:"Feature layers using the service default symbology have not been styled for this map. (Raster/imagery layers are excluded - their rendering lives in the service.)"},
+    "layers.nongeo":        {section:"Layers", severity:"warn", provisional:true, name:"Non-geographic layers (images) in the map", guide:"A picture added as a media layer is pinned to one spot on the ground. It grows and shrinks as students zoom, leaves the screen when they pan, and carries no text a screen reader can read. Put reference graphics in the legend or the description instead; a legend built from the layers' own symbols stays put and can be read."},
     "popup.configured":     {section:"Pop-ups", severity:"warn", name:"Pop-ups configured (not default all-fields)", guide:"Configure pop-ups so they are clear, well-labelled, and only contain relevant information. Authored pop-ups - including Arcade expressions, text/media elements, and curated field lists - count as configured. Raster layers identify pixel values by default and are exempt; reference/label layers are exempt. A default vector pop-up is a guideline warning, not a publishing blocker."},
     "popup.metafields":     {section:"Pop-ups", severity:"warn", name:"Metadata fields hidden", guide:"Hide unnecessary or metadata fields (OBJECTID, GlobalID, Shape_Length, edit tracking)."},
     "popup.aliases":        {section:"Pop-ups", severity:"warn", name:"Fields renamed to plain language", guide:"Rename data fields so they read in plain language rather than abstract codes or IDs."},
@@ -214,6 +217,10 @@ const RUBRIC = {
     "legend.labels":        {section:"Symbology & legend", severity:"fail", name:"Legend labels are readable and include units", guide:"Legend items should be clearly labelled and include units for quantitative data; avoid raw field names."},
     "legend.entities":      {section:"Symbology & legend", severity:"warn", provisional:true, name:"Colours that identify individuals are explained", guide:"When each colour is one named individual (one layer per animal, person or place), the legend or description should say so, for example \"Each colour is one collared bear\". A custom legend image cannot be read by this checker."},
     "sym.diverging-note":   {section:"Symbology & legend", severity:"info", name:"Diverging ramp pivot explained", guide:"If a diverging scheme is used, explain the value at the divergence in the legend or description."},
+    "time.slider":          {section:"Time", severity:"warn", name:"Time slider set up", guide:"Time-enabled layers need a time slider that suits the data: a sensible range, a step that matches how often the data changes, and a time zone students will read correctly. One thumb shows one moment per step; two thumbs show a window."},
+    "time.explained":       {section:"Time", severity:"warn", provisional:true, name:"Students are told what the animation shows", guide:"When a map moves through time, say in the description or caption what is changing and how to use the slider, for example \"Press play to watch seven collared bears move month by month\"."},
+    "time.range":           {section:"Time", severity:"warn", name:"Slider range matches the data", guide:"The slider should span the data. Data outside the slider can never be shown; a slider much longer than the data plays empty frames."},
+    "time.speed":           {section:"Time", severity:"warn", provisional:true, name:"Time-enabled layers are light enough to animate", guide:"Time-enabled layers redraw on every step, so many features, many separate time layers or server-drawn layers can make the slider slow on school devices. The limits used here are rules of thumb, not measurements."},
     "render.coverage":      {section:"Rendered map", severity:"warn", name:"Data visible at the saved extent", guide:"The map is drawn at its saved initial extent and compared with the basemap alone. If almost nothing differs, students may open the map and see no data - check the initial extent and layer visibility ranges."},
     "render.contrast":      {section:"Rendered map", severity:"warn", name:"Data stands out from the basemap", guide:"Ensure the basemap's colours and elements complement the thematic data. Measured as the CIEDE2000 difference between each drawn data pixel and the basemap pixel beneath it - a heuristic; deliberately transparent layers score lower."},
     "render.layerviews":    {section:"Rendered map", severity:"warn", name:"Layers draw at the saved extent", guide:"Layers that fail to load, or that a visibility range switches off at the opening scale, will not be seen by students when the map opens."}
@@ -224,20 +231,22 @@ const RUBRIC = {
    data handling changes, and the app version on every release.
    Version tracking began at app 0.8.0 (earlier builds carried only the rubric version).
    ============================================================ */
-const APP = { version: "0.10.0", sdk: "4.31" };
+const APP = { version: "0.11.0", sdk: "4.31" };
 const MODELS = {
   "score roll-up":            {v:"1.0", note:"Weighted roll-up of check results (fail x3, warn x1, info not scored) to a 0-100 score and letter grade."},
   "pop-up classifier":        {v:"1.1", note:"Classifies how a pop-up is authored (Arcade, elements, media, description, fields, default). 1.1: counts a field as shown only when the pop-up displays it (a fields table), so written-text pop-ups no longer raise field-name warnings; reports pop-ups switched off."},
   "colour screening":         {v:"1.1", note:"CIEDE2000 colour difference plus Machado, Oliveira & Fernandes (2009) colour-vision-deficiency simulation. 1.1: classes that differ in line style, marker shape or size are not judged on colour alone."},
   "layer item merge":         {v:"1.0", note:"Where the web map does not set them, reads pop-up, symbols, labels and visibility range from each layer's own item (the web map overrides the item). If an item cannot be read the web map alone is used."},
   "citation screening":       {v:"1.0", note:"Keyword screen for a data citation (a link, the words source or data from, a known data provider, or a year) in the credits or description. A heuristic."},
+  "media layer footprint":    {v:"1.0", note:"Works out how large a media layer (a picture placed on the map) is on the ground, from its georeference, and what share of the opening view it covers."},
+  "time screening":           {v:"1.0", note:"Reads the time slider and each layer's time settings, compares the slider range with the data, counts features in time-enabled layers and applies rule-of-thumb speed thresholds. The thresholds are provisional: play the slider on a school Chromebook to be sure."},
   "split-layer detection":    {v:"1.0", note:"Finds three or more layers that come from one service and differ only by a filter, so colour means which one rather than a data value."},
   "effects screening":       {v:"1.0", note:"Ignores near-neutral effect values (brightness, contrast, saturate within 15% of 1; hue shifts under 10 degrees) so only effects that visibly change the map are counted or flagged."},
   "render: data coverage":    {v:"1.1", note:"Share of the viewport where data layers change the pixels, from a full and a basemap-only screenshot at the saved extent. 1.1: waits for the drawing to settle by screenshot stability, and skips instead of scoring a blank render."},
   "render: basemap contrast": {v:"1.1", note:"Median CIEDE2000 difference between each drawn data pixel and the basemap pixel beneath it."},
 };
 const MODEL_VERSIONS = Object.fromEntries(Object.entries(MODELS).map(([k,m])=>[k,m.v]));
-const SECTION_MODELS = {"Map title & metadata":["citation screening"], "Layers":["layer item merge"], "Symbology & legend":["split-layer detection"], "Pop-ups":["pop-up classifier","layer item merge"], "Accessibility":["colour screening"], "Rendered map":["render: data coverage","render: basemap contrast"], "Visual effects & labels":["effects screening"]};
+const SECTION_MODELS = {"Map title & metadata":["citation screening"], "Layers":["layer item merge","media layer footprint"], "Time":["time screening"], "Symbology & legend":["split-layer detection"], "Pop-ups":["pop-up classifier","layer item merge"], "Accessibility":["colour screening"], "Rendered map":["render: data coverage","render: basemap contrast"], "Visual effects & labels":["effects screening"]};
 function modelTag(name){ return name+' v'+MODELS[name].v; }
 function modelTags(section){ return (SECTION_MODELS[section]||[]).map(n=>'<span class="vtag">'+modelTag(n)+'</span>').join(''); }
 document.getElementById('ver').textContent = 'app v' + APP.version + ' · rubric v' + RUBRIC.version;
@@ -247,8 +256,8 @@ document.getElementById('ver').textContent = 'app v' + APP.version + ' · rubric
   document.getElementById('vtable').innerHTML='<thead><tr><th>Component</th><th>Version</th><th>What it does</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+r[0]+'</td><td class="v">'+r[1]+'</td><td>'+r[2]+'</td></tr>').join('')+'</tbody>';
 })();
 
-const SECTIONS = ["Map title & metadata","Extent & scale","Layers","Pop-ups","Visual effects & labels","Accessibility","Symbology & legend","Rendered map"];
-const SEC_ABBR = {"Map title & metadata":"Meta","Extent & scale":"Extent","Layers":"Layers","Pop-ups":"Pop-ups","Visual effects & labels":"Effects","Accessibility":"A11y","Symbology & legend":"Symbology","Rendered map":"Render"};
+const SECTIONS = ["Map title & metadata","Extent & scale","Layers","Pop-ups","Visual effects & labels","Accessibility","Symbology & legend","Time","Rendered map"];
+const SEC_ABBR = {"Map title & metadata":"Meta","Extent & scale":"Extent","Layers":"Layers","Pop-ups":"Pop-ups","Visual effects & labels":"Effects","Accessibility":"A11y","Symbology & legend":"Symbology","Time":"Time","Rendered map":"Render"};
 const SEV_WEIGHT = {fail:3, warn:1, info:0};
 const STATUS_PTS = {pass:1, warn:0.5, fail:0};
 function gradeOf(p){ return p==null?'-':p>=90?'A':p>=80?'B':p>=70?'C':p>=60?'D':'F'; }
@@ -444,10 +453,41 @@ async function enrichFromItems(layers){
     if(!l.renderer && md.drawingInfo && md.drawingInfo.renderer){ l.renderer=md.drawingInfo.renderer; from.push('symbols'); }
     if(!(l.labelingInfo&&l.labelingInfo.length) && md.drawingInfo && md.drawingInfo.labelingInfo && m.showLabels!==false){ l.labelingInfo=md.drawingInfo.labelingInfo; from.push('labels'); }
     if(!l.geometryType && md.geometryType) l.geometryType=md.geometryType;
+    if(!l.timeInfo && md.timeInfo) l.timeInfo=md.timeInfo;
     if(!l.definitionExpression && md.definitionExpression) l.definitionExpression=md.definitionExpression;
     if(!(l.minScale||l.maxScale) && (md.minScale||md.maxScale)){ l.minScale=md.minScale; l.maxScale=md.maxScale; from.push('visibility range'); }
     if(from.length) l.fromItem=from;
   });
+}
+// Size of a media layer (picture on the map) on the ground, from its georeference.
+function mediaFootprint(l, ext){
+  const g=l.georeference; if(!g) return null; let pts=null;
+  if(Array.isArray(g.coefficients) && g.coefficients.length===8 && Array.isArray(g.controlPoints) && g.controlPoints.length){
+    const [a,b,c,d,e,f,gg,h]=g.coefficients;
+    pts=g.controlPoints.map(p=>{ const den=gg*p.x+h*p.y+1; return [(a*p.x+b*p.y+c)/den,(d*p.x+e*p.y+f)/den]; });
+  } else if(g.extent && g.extent.xmin!==undefined){ pts=[[g.extent.xmin,g.extent.ymin],[g.extent.xmax,g.extent.ymax]]; }
+  if(!pts) return null;
+  const xs=pts.map(p=>p[0]), ys=pts.map(p=>p[1]);
+  const x0=Math.min(...xs), x1=Math.max(...xs), y0=Math.min(...ys), y1=Math.max(...ys);
+  const wm=x1-x0, hm=y1-y0; let share=null, inside=null;
+  const web=sr=>sr && [102100,3857,102113].includes(sr.latestWkid||sr.wkid);
+  if(ext && web(ext.spatialReference) && web(g.spatialReference||ext.spatialReference) && ext.xmax>ext.xmin){
+    share=wm/(ext.xmax-ext.xmin);
+    inside = x0>=ext.xmin && x1<=ext.xmax && y0>=ext.ymin && y1<=ext.ymax;
+  }
+  return {widthM:wm, heightM:hm, share, inside};
+}
+const TIME_UNIT_MS={milliseconds:1,seconds:1e3,minutes:6e4,hours:36e5,days:864e5,weeks:6048e5,months:2629800000,years:31557600000,decades:315576000000,centuries:3155760000000};
+function timeSliderInfo(widgets){
+  const p=widgets && widgets.timeSlider && widgets.timeSlider.properties; if(!p) return null;
+  const u=p.timeStopInterval||{}; const unit=String(u.units||'').replace('esriTimeUnits','').toLowerCase();
+  const stepMs=(u.interval||1)*(TIME_UNIT_MS[unit]||0);
+  const steps= stepMs? Math.max(1,Math.round((p.endTime-p.startTime)/stepMs)) : null;
+  return {start:p.startTime, end:p.endTime, thumbs:p.thumbCount, interval:u.interval||1, unit, steps, rate:p.thumbMovingRate, seconds:(steps&&p.thumbMovingRate)?Math.round(steps*p.thumbMovingRate/1000):null};
+}
+const dayStr=ms=>new Date(ms).toISOString().slice(0,10);
+async function countFeatures(url, where){
+  try{ const j=await getJSON(url+'/query?where='+encodeURIComponent(where||'1=1')+'&returnCountOnly=true&f=json'); return typeof j.count==='number'?j.count:null; }catch(e){ return null; }
 }
 // Authored = anything a person deliberately set up (Arcade included). Not a fail.
 function popupIsAuthored(kind){ return ['arcade','elements','media','description','fields'].includes(kind); }
@@ -520,6 +560,17 @@ async function audit(itemId, onProgress, opts){
   } else note(res,'proj.explained','wkid '+(wkid||'3857')+' (Web Mercator)');
   if(layers.length>T.layersMaxSoft) set(res,'layer.count','warn',layers.length+' operational layers.',layers.map(l=>l.title));
   else note(res,'layer.count',layers.length+' operational layers');
+  const media=layers.filter(l=>/Media/i.test(l.layerType||''));
+  if(!media.length) note(res,'layers.nongeo','every layer is a data layer or a web service');
+  else{
+    const lines=media.map(l=>{ const fp=mediaFootprint(l, ext);
+      let t='"'+l.title+'" ('+(l.mediaType||'image')+(l.visible===false?', off when the map opens':', on when the map opens')+')';
+      if(fp) t+=': about '+(fp.widthM>=1000?(fp.widthM/1000).toFixed(1)+' km':Math.round(fp.widthM)+' m')+' wide on the ground'+(fp.share!==null?', '+Math.round(fp.share*100)+'% of the opening view\'s width'+(fp.inside?' and inside it':' and not wholly inside it'):'');
+      t+='; '+(l.altText?'has a text description':'no text description is stored with it');
+      return t; });
+    const stands=media.some(l=>/legend|key/i.test(l.title||''));
+    set(res,'layers.nongeo','warn',media.length+' non-geographic layer(s): '+media.map(l=>'"'+l.title+'"').join(', ')+(stands?' - a picture standing in for the legend':' - a picture, not data')+'. It is pinned to a place on the ground, so it scales with zoom and leaves the screen when students pan.',lines);
+  }
   onProgress && onProgress('Probing '+layers.length+' layer services...');
   const probeCache={}; const probable=l=>l.url && /^https?:\/\//i.test(l.url) && l.layerType!=='MediaLayer';
   const probes = await mapLimit(layers,4, async l=> probable(l) ? await (probeCache[l.url] || (probeCache[l.url]=probeLayer(l.url))) : {ok:true, info:null, skipped:true});
@@ -677,6 +728,55 @@ async function audit(itemId, onProgress, opts){
     else if(customLegend) set(res,'legend.entities','warn','Each colour stands for one individual, and the legend is a custom image this checker cannot read. Say in the description or legend what a colour means (for example "Each colour is one collared bear").',lines);
     else set(res,'legend.entities','info','Each colour stands for one individual. The automatic legend lists the layer names; consider also saying in the description what a colour means.',lines);
   }
+  // ---- Time (time screening v1.0) ----
+  const slider=timeSliderInfo(data.widgets);
+  const timeLayers=layers.map((l,i)=>({l,i,ti:l.timeAnimation===false?null:((probes[i].info&&probes[i].info.timeInfo)||l.timeInfo||null)})).filter(x=>x.ti);   // a layer whose time animation is switched off in the map does not take part
+  const refused=layers.filter((l,i)=>l.kind==='feature' && probes[i] && !probes[i].ok);
+  const timeIds=['time.slider','time.explained','time.range','time.speed'];
+  if(!slider && !timeLayers.length && !refused.length) timeIds.forEach(id=>note(res,id,'no time slider and no time-enabled layers'));
+  else{
+    const tz=data.timeZone||'system';
+    if(slider){
+      const ev=[dayStr(slider.start)+' to '+dayStr(slider.end), (slider.thumbs===2?'two thumbs (a window)':'one thumb (one moment per step)'), 'step: '+slider.interval+' '+slider.unit+(slider.steps?' ('+slider.steps+' steps'+(slider.seconds?', about '+slider.seconds+' s to play at '+slider.rate+' ms per step':'')+')':''), 'time zone: '+(tz==='system'?'each viewer\'s own (dates can read a day apart across time zones)':tz), 'opening time: '+((data.initialState&&data.initialState.timeExtent)?'saved':'not saved, so the map does not set what students see first')];
+      if(!timeLayers.length && !refused.length) set(res,'time.slider','warn','A time slider is set up but no layer in the map has time settings, so it does nothing.',ev);
+      else set(res,'time.slider','info','Time slider: '+dayStr(slider.start)+' to '+dayStr(slider.end)+', '+(slider.steps?slider.steps+' steps of '+slider.interval+' '+slider.unit:'step unknown')+(slider.seconds?', about '+slider.seconds+' s to play':'')+'.',ev);
+    } else if(timeLayers.length) set(res,'time.slider','info',timeLayers.length+' time-enabled layer(s) but the map has no time slider, so all their data show at once. Fine if time is not part of the lesson; add a slider if it is.',timeLayers.map(x=>x.l.title));
+    else set(res,'time.slider','skip','Not assessed - the layers\' time settings could not be read (their service refuses requests with no sign-in).');
+    const talk=desc+' '+(item.snippet||'');
+    if(!slider) note(res,'time.explained','no time slider, so nothing moves through time');
+    else if(RUBRIC.explainsTimePattern.test(talk)) note(res,'time.explained','the summary or description mentions the slider or time');
+    else set(res,'time.explained','warn','The map moves through time but nothing in the summary or description tells students what is changing or how to use the slider.',['summary: '+((item.snippet||'').slice(0,120)||'none'),'description: '+(desc.length?desc.length+' characters, no mention of the slider or time':'none')]);
+    const ext2=timeLayers.map(x=>x.ti.timeExtent).filter(e=>Array.isArray(e)&&e.length===2&&e[0]&&e[1]);
+    if(!slider) note(res,'time.range','no time slider to compare');
+    else if(!ext2.length) set(res,'time.range','skip',refused.length?'Not assessed - the layers\' time settings could not be read (their service refuses requests with no sign-in).':'Not assessed - no layer reports a time extent.');
+    else{
+      const d0=Math.min(...ext2.map(e=>e[0])), d1=Math.max(...ext2.map(e=>e[1])), span=Math.max(1,d1-d0), slack=span*RUBRIC.thresholds.timeRangeSlack;
+      const probs=[]; if(d0<slider.start-1) probs.push('data starts '+dayStr(d0)+', before the slider ('+dayStr(slider.start)+'), so the earliest data can never be shown');
+      if(d1>slider.end+1) probs.push('data runs to '+dayStr(d1)+', after the slider ends ('+dayStr(slider.end)+'), so the latest data can never be shown');
+      if(slider.start<d0-slack) probs.push('slider starts '+dayStr(slider.start)+', well before the data ('+dayStr(d0)+'), so it plays empty frames');
+      if(slider.end>d1+slack) probs.push('slider ends '+dayStr(slider.end)+', well after the data ('+dayStr(d1)+'), so it plays empty frames');
+      if(probs.length) set(res,'time.range','warn','The slider range does not match the data.',probs.concat(['data: '+dayStr(d0)+' to '+dayStr(d1),'slider: '+dayStr(slider.start)+' to '+dayStr(slider.end)]));
+      else note(res,'time.range',['data: '+dayStr(d0)+' to '+dayStr(d1),'slider: '+dayStr(slider.start)+' to '+dayStr(slider.end)]);
+    }
+    if(!timeLayers.length){
+      if(refused.length && slider) set(res,'time.speed','skip','Not assessed - the layers\' time settings could not be read (their service refuses requests with no sign-in). '+refused.length+' layer(s) from '+new Set(refused.map(l=>l.url)).size+' service(s) sit behind that refusal; test the slider by playing it, signed out, on a school device.');
+      else note(res,'time.speed','no time-enabled layers');
+    } else {
+      onProgress && onProgress('Counting features in time-enabled layers...');
+      const counts=await mapLimit(timeLayers,4, x=> x.l.kind==='feature' && x.l.url ? countFeatures(x.l.url, x.l.definitionExpression) : Promise.resolve(null));
+      const flags=[], ev=[]; let total=0;
+      timeLayers.forEach((x,k)=>{ const n=counts[k], mx=(probes[x.i].info||{}).maxRecordCount;
+        ev.push(x.l.title+': '+(x.l.kind!=='feature'?'a '+(x.l.layerType||'service')+' layer drawn by the server on every step':(n===null?'feature count unavailable':n+' features'+(mx?' (one request returns up to '+mx+')':''))));
+        if(n!==null){ total+=n; if(mx && n>mx) flags.push(x.l.title+' has more features ('+n+') than one request returns ('+mx+'), so each step needs several requests'); }
+        if(x.l.kind!=='feature') flags.push(x.l.title+' is drawn by the server on every step'); });
+      if(total>RUBRIC.thresholds.timeFeaturesSoft) flags.push(total+' features across the time-enabled layers (rule of thumb: over '+RUBRIC.thresholds.timeFeaturesSoft+')');
+      if(timeLayers.length>RUBRIC.thresholds.timeLayersSoft) flags.push(timeLayers.length+' separate time-enabled layers (rule of thumb: more than '+RUBRIC.thresholds.timeLayersSoft+' redraw separately on every step)');
+      const svcs={}; timeLayers.forEach(x=>{ if(x.l.url) svcs[x.l.url]=(svcs[x.l.url]||0)+1; });
+      Object.entries(svcs).forEach(([u,c])=>{ if(c>1) ev.push(c+' of these layers come from one service - consider one layer styled by value instead of '+c+' filtered copies'); });
+      if(flags.length) set(res,'time.speed','warn','Animating may be slow on school devices: '+flags.length+' concern(s).',flags.concat(['--- time-enabled layers ---'],ev,['These are rules of thumb; play the slider on a school Chromebook to be sure.']));
+      else note(res,'time.speed',ev);
+    }
+  }
   let render=null;
   if(opts && opts.render) render = await renderStage(res, itemId, onProgress);
   else ['render.coverage','render.contrast','render.layerviews'].forEach(id=>set(res,id,'skip','Not assessed - the render option was off for this run.'));
@@ -802,7 +902,7 @@ function flattenLayer(l){
   let kind='other';
   if(/Image|Raster|WMS|WMTS|TiledImageService/i.test(l.layerType||'')) kind='raster';
   else if(/Feature|CSV|GeoJSON|OGCFeature/i.test(l.layerType||'') || fc) kind='feature';
-  return [{title:l.title||l.id, url, kind, layerType:l.layerType, itemId:l.itemId, definitionExpression:ld.definitionExpression||l.definitionExpression, showLegend:l.showLegend, renderer, geometryType, fields, labelingInfo, popupInfo, disablePopup:l.disablePopup, minScale:l.minScale||ld.minScale, maxScale:l.maxScale||ld.maxScale, effect:l.effect, blendMode:l.blendMode, opacity:l.opacity}];
+  return [{title:l.title||l.id, url, kind, layerType:l.layerType, itemId:l.itemId, timeInfo:ld.timeInfo||l.timeInfo, timeAnimation:l.timeAnimation, georeference:l.georeference, mediaType:l.mediaType, altText:l.altText||l.description||l.caption, visible:l.visibility, definitionExpression:ld.definitionExpression||l.definitionExpression, showLegend:l.showLegend, renderer, geometryType, fields, labelingInfo, popupInfo, disablePopup:l.disablePopup, minScale:l.minScale||ld.minScale, maxScale:l.maxScale||ld.maxScale, effect:l.effect, blendMode:l.blendMode, opacity:l.opacity}];
 }
 function effectList(e){
   const out=[];
